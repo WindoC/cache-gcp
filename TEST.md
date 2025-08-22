@@ -45,52 +45,41 @@ gcloud services enable storage.googleapis.com
 gsutil mb gs://your-unique-bucket-name
 ```
 
-#### Create service account and download credentials
+#### Local Development Credentials (Optional)
+For local development only, you can use Application Default Credentials:
+
 ```bash
-# Create service account
-gcloud iam service-accounts create file-storage-api \
-    --description="Service account for file storage API" \
-    --display-name="File Storage API"
-
-# Grant necessary permissions
-gcloud projects add-iam-policy-binding your-project-id \
-    --member="serviceAccount:file-storage-api@your-project-id.iam.gserviceaccount.com" \
-    --role="roles/storage.objectAdmin"
-
-# Download credentials
-gcloud iam service-accounts keys create credentials.json \
-    --iam-account=file-storage-api@your-project-id.iam.gserviceaccount.com
+# Authenticate with your user account for local testing
+gcloud auth application-default login
 ```
+
+**Note**: When deployed to GAE, the app automatically uses the default App Engine service account with built-in GCS permissions. No additional service account setup is required for production deployment.
 
 ### 3. Environment Configuration
 
-Set the following environment variables:
+Set the following environment variables for local development:
 
 ```bash
 # On Windows (Command Prompt):
 set GCP_PROJECT=your-project-id
 set GCS_BUCKET=your-unique-bucket-name
-set GOOGLE_APPLICATION_CREDENTIALS=path\to\credentials.json
 
 # On Windows (PowerShell):
 $env:GCP_PROJECT="your-project-id"
 $env:GCS_BUCKET="your-unique-bucket-name"  
-$env:GOOGLE_APPLICATION_CREDENTIALS="path\to\credentials.json"
 
 # On macOS/Linux:
 export GCP_PROJECT="your-project-id"
 export GCS_BUCKET="your-unique-bucket-name"
-export GOOGLE_APPLICATION_CREDENTIALS="path/to/credentials.json"
 ```
+
+**Note**: No `GOOGLE_APPLICATION_CREDENTIALS` needed if you used `gcloud auth application-default login` for local development. For GAE deployment, authentication is automatic.
 
 ### 4. Start the Development Server
 
 ```bash
 # Using uvicorn directly
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-
-# Or using the main.py entry point
-python main.py
 ```
 
 The API will be available at:

@@ -31,7 +31,6 @@ project-root/
 │   ├── utils/         # Helper utilities
 │   │   └── gcs_client.py  # GCS operations
 │   └── __init__.py
-├── main.py            # Entry point
 ├── app.yaml           # GAE configuration
 ├── requirements.txt   # Python dependencies
 └── README.md
@@ -67,11 +66,6 @@ project-root/
 3. **Run development server**:
    ```bash
    uvicorn app.main:app --reload
-   ```
-
-   Or using the entry point:
-   ```bash
-   python main.py
    ```
 
 4. **Access the API**:
