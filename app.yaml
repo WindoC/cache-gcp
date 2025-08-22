@@ -1,0 +1,13 @@
+runtime: python313
+entrypoint: gunicorn -w 4 -k uvicorn.workers.UvicornWorker app.main:app
+
+env_variables:
+  USERNAME: "admin"
+  PASSWORD_HASH: "replace-with-actual-sha256-hash"
+  AES_KEY_HASH: "replace-with-actual-sha256-hash"
+  GCP_PROJECT: "replace-with-project-id"
+  GCS_BUCKET: "replace-with-bucket-name"
+
+automatic_scaling:
+  min_instances: 0
+  max_instances: 10
