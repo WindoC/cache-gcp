@@ -3,8 +3,9 @@ entrypoint: gunicorn -w 4 -k uvicorn.workers.UvicornWorker app.main:app
 
 env_variables:
   USERNAME: "admin"
-  PASSWORD_HASH: "replace-with-actual-sha256-hash"
-  AES_KEY_HASH: "replace-with-actual-sha256-hash"
+  PASSWORD_HASH: "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9"  # SHA256 of "admin"
+  JWT_SECRET_KEY: "change-this-to-a-secure-random-string-in-production"
+  AES_KEY_HASH: "replace-with-actual-sha256-hash"  # For Phase 3
   GCP_PROJECT: "replace-with-project-id"
   GCS_BUCKET: "replace-with-bucket-name"
 

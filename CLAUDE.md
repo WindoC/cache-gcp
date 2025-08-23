@@ -33,7 +33,6 @@ project-root/
 │   ├── services/      # business logic
 │   ├── utils/         # helpers (crypto, GCS client, etc.)
 │   └── __init__.py
-├── main.py            # Entry point (imports app.main)
 ├── app.yaml           # GAE config
 ├── requirements.txt
 └── README.md

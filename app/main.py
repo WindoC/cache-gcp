@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import files
+from app.routes import files, auth
 
-app = FastAPI(title="File Storage API", version="1.0.0")
+app = FastAPI(title="File Storage API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -12,6 +12,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
 app.include_router(files.router)
 
 @app.get("/")

@@ -1,10 +1,11 @@
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, HttpUrl
 from typing import Optional, List
 import uuid
 import io
 from app.utils.gcs_client import gcs_client
+from app.utils.auth import get_current_user, get_optional_current_user
 
 router = APIRouter(prefix="/api", tags=["files"])
 
@@ -23,7 +24,7 @@ class FileResponse(BaseModel):
     is_public: bool
 
 @router.post("/upload", response_model=dict)
-async def upload_from_url(request: UploadURLRequest):
+async def upload_from_url(request: UploadURLRequest, current_user: dict = Depends(get_current_user)):
     try:
         file_id = request.file_id or str(uuid.uuid4())
         
@@ -53,7 +54,8 @@ async def upload_from_url(request: UploadURLRequest):
 async def upload_direct(
     file: UploadFile = File(...),
     file_id: Optional[str] = Form(None),
-    is_public: bool = Form(False)
+    is_public: bool = Form(False),
+    current_user: dict = Depends(get_current_user)
 ):
     try:
         file_id = file_id or str(uuid.uuid4())
@@ -79,7 +81,7 @@ async def upload_direct(
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
 @router.get("/files", response_model=List[FileResponse])
-async def list_files(is_public: Optional[bool] = None):
+async def list_files(is_public: Optional[bool] = None, current_user: dict = Depends(get_current_user)):
     try:
         files = gcs_client.list_files(is_public)
         return files
@@ -87,7 +89,14 @@ async def list_files(is_public: Optional[bool] = None):
         raise HTTPException(status_code=500, detail=f"Failed to list files: {str(e)}")
 
 @router.get("/download/{file_id}")
-async def download_file(file_id: str, is_public: bool = False):
+async def download_file(file_id: str, is_public: bool = False, current_user: Optional[dict] = Depends(get_optional_current_user)):
+    # For private files, require authentication
+    if not is_public and not current_user:
+        raise HTTPException(
+            status_code=401, 
+            detail="Authentication required for private files"
+        )
+    
     try:
         file_data = gcs_client.download_file(file_id, is_public)
         
@@ -106,7 +115,7 @@ async def download_file(file_id: str, is_public: bool = False):
         raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")
 
 @router.post("/rename/{file_id}", response_model=dict)
-async def rename_file(file_id: str, request: RenameRequest, is_public: bool = False):
+async def rename_file(file_id: str, request: RenameRequest, is_public: bool = False, current_user: dict = Depends(get_current_user)):
     try:
         # Check if source file exists
         if not gcs_client.file_exists(file_id, is_public):
@@ -129,7 +138,7 @@ async def rename_file(file_id: str, request: RenameRequest, is_public: bool = Fa
         raise HTTPException(status_code=500, detail=f"Rename failed: {str(e)}")
 
 @router.post("/share/{file_id}", response_model=dict)
-async def toggle_share(file_id: str, current_is_public: bool = False):
+async def toggle_share(file_id: str, current_is_public: bool = False, current_user: dict = Depends(get_current_user)):
     try:
         # Check if file exists
         if not gcs_client.file_exists(file_id, current_is_public):
@@ -148,7 +157,7 @@ async def toggle_share(file_id: str, current_is_public: bool = False):
         raise HTTPException(status_code=500, detail=f"Share toggle failed: {str(e)}")
 
 @router.delete("/files/{file_id}")
-async def delete_file(file_id: str, is_public: bool = False):
+async def delete_file(file_id: str, is_public: bool = False, current_user: dict = Depends(get_current_user)):
     try:
         success = gcs_client.delete_file(file_id, is_public)
         

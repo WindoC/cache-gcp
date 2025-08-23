@@ -1,6 +1,6 @@
-# Testing Setup Guide
+# Testing Setup Guide - Phase 2
 
-This guide explains how to set up and test the File Storage API locally and with Google Cloud Storage.
+This guide explains how to set up and test the File Storage API (Phase 2 - Authentication & Access Control) locally and with Google Cloud Storage.
 
 ## Prerequisites
 
@@ -61,19 +61,32 @@ Set the following environment variables for local development:
 
 ```bash
 # On Windows (Command Prompt):
+set USERNAME=admin
+set PASSWORD_HASH=240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9
+set JWT_SECRET_KEY=your-secret-key-change-this-in-production
 set GCP_PROJECT=your-project-id
 set GCS_BUCKET=your-unique-bucket-name
 
 # On Windows (PowerShell):
+$env:USERNAME="admin"
+$env:PASSWORD_HASH="240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9"
+$env:JWT_SECRET_KEY="your-secret-key-change-this-in-production"
 $env:GCP_PROJECT="your-project-id"
-$env:GCS_BUCKET="your-unique-bucket-name"  
+$env:GCS_BUCKET="your-unique-bucket-name"
 
 # On macOS/Linux:
+export USERNAME="admin"
+export PASSWORD_HASH="240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9"  # SHA256 of "admin"
+export JWT_SECRET_KEY="your-secret-key-change-this-in-production"
 export GCP_PROJECT="your-project-id"
 export GCS_BUCKET="your-unique-bucket-name"
 ```
 
-**Note**: No `GOOGLE_APPLICATION_CREDENTIALS` needed if you used `gcloud auth application-default login` for local development. For GAE deployment, authentication is automatic.
+**Authentication Notes**:
+- `PASSWORD_HASH` above is SHA256 hash of "admin" for development
+- For production, generate your own hash: `echo -n "your-password" | sha256sum`
+- `JWT_SECRET_KEY` should be a secure random string in production
+- **Note**: No `GOOGLE_APPLICATION_CREDENTIALS` needed if you used `gcloud auth application-default login` for local development. For GAE deployment, authentication is automatic.
 
 ### 4. Start the Development Server
 
@@ -89,18 +102,70 @@ The API will be available at:
 
 ## Testing the API
 
+### Authentication Flow
+
+**Phase 2 requires authentication for all file operations!** You must first obtain a JWT token.
+
+#### Step 1: Login and Get JWT Token
+```bash
+curl -X POST "http://localhost:8000/auth/login" \
+     -H "Content-Type: application/json" \
+     -d '{"username": "admin", "password": "admin"}'
+```
+
+Expected response:
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer",
+  "expires_in": 3600
+}
+```
+
+#### Step 2: Save the Token
+Save the `access_token` value from the response. You'll need it for all subsequent requests.
+
+```bash
+# Store token in a variable (Linux/macOS/Windows Git Bash)
+TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+# For Windows Command Prompt:
+set TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+# For Windows PowerShell:
+$TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
 ### Using the FastAPI Documentation
 
 1. Open http://localhost:8000/docs in your browser
-2. You'll see all available endpoints with interactive testing capabilities
-3. Click on any endpoint to expand it and try it out
+2. Click the **"Authorize"** button at the top right
+3. Enter your JWT token in the format: `Bearer YOUR_JWT_TOKEN`
+4. Now you can test all authenticated endpoints directly
 
 ### Manual Testing with curl
 
-#### 1. Test File Upload from URL
+#### 1. Test Authentication Endpoints
+```bash
+# Login
+curl -X POST "http://localhost:8000/auth/login" \
+     -H "Content-Type: application/json" \
+     -d '{"username": "admin", "password": "admin"}'
+
+# Get current user info (requires token)
+curl -X GET "http://localhost:8000/auth/me" \
+     -H "Authorization: Bearer $TOKEN"
+
+# Logout (requires token)
+curl -X POST "http://localhost:8000/auth/logout" \
+     -H "Authorization: Bearer $TOKEN"
+```
+
+#### 2. Test File Upload from URL (Requires Authentication)
 ```bash
 curl -X POST "http://localhost:8000/api/upload" \
      -H "Content-Type: application/json" \
+     -H "Authorization: Bearer $TOKEN" \
      -d '{
        "url": "https://httpbin.org/json",
        "file_id": "test-file-1",
@@ -108,134 +173,314 @@ curl -X POST "http://localhost:8000/api/upload" \
      }'
 ```
 
-#### 2. Test Direct File Upload
+#### 3. Test Direct File Upload (Requires Authentication)
 ```bash
 # Create a test file
 echo "Hello, World!" > test.txt
 
 # Upload it
 curl -X POST "http://localhost:8000/api/upload/direct" \
+     -H "Authorization: Bearer $TOKEN" \
      -F "file=@test.txt" \
      -F "file_id=direct-upload-test" \
      -F "is_public=false"
 ```
 
-#### 3. List Files
+#### 4. List Files (Requires Authentication)
 ```bash
 # List all files
-curl "http://localhost:8000/api/files"
+curl "http://localhost:8000/api/files" \
+     -H "Authorization: Bearer $TOKEN"
 
 # List only public files
-curl "http://localhost:8000/api/files?is_public=true"
+curl "http://localhost:8000/api/files?is_public=true" \
+     -H "Authorization: Bearer $TOKEN"
 
 # List only private files  
-curl "http://localhost:8000/api/files?is_public=false"
+curl "http://localhost:8000/api/files?is_public=false" \
+     -H "Authorization: Bearer $TOKEN"
 ```
 
-#### 4. Download File
+#### 5. Download File (Conditional Authentication)
 ```bash
+# Private file download (requires authentication)
 curl "http://localhost:8000/api/download/test-file-1?is_public=false" \
+     -H "Authorization: Bearer $TOKEN" \
      --output downloaded-file.json
+
+# Public file download (no authentication required)
+curl "http://localhost:8000/api/download/public-file?is_public=true" \
+     --output downloaded-public-file.json
 ```
 
-#### 5. Rename File
+#### 6. Rename File (Requires Authentication)
 ```bash
 curl -X POST "http://localhost:8000/api/rename/test-file-1?is_public=false" \
      -H "Content-Type: application/json" \
+     -H "Authorization: Bearer $TOKEN" \
      -d '{"new_file_id": "renamed-test-file"}'
 ```
 
-#### 6. Toggle Share (Private/Public)
+#### 7. Toggle Share (Private/Public) (Requires Authentication)
 ```bash
-curl -X POST "http://localhost:8000/api/share/renamed-test-file?current_is_public=false"
+curl -X POST "http://localhost:8000/api/share/renamed-test-file?current_is_public=false" \
+     -H "Authorization: Bearer $TOKEN"
 ```
 
-#### 7. Delete File
+#### 8. Delete File (Requires Authentication)
 ```bash
-curl -X DELETE "http://localhost:8000/api/files/renamed-test-file?is_public=true"
+curl -X DELETE "http://localhost:8000/api/files/renamed-test-file?is_public=true" \
+     -H "Authorization: Bearer $TOKEN"
+```
+
+#### 9. Test Access Control
+```bash
+# This should fail with 401 Unauthorized
+curl "http://localhost:8000/api/files"
+
+# This should fail with 401 Unauthorized
+curl "http://localhost:8000/api/download/private-file?is_public=false"
+
+# This should work (public file, no auth required)
+curl "http://localhost:8000/api/download/public-file?is_public=true"
 ```
 
 ### Using Python Requests
 
-Create a test script `test_api.py`:
+Create a test script `test_api_phase2.py`:
 
 ```python
 import requests
 import json
 
-BASE_URL = "http://localhost:8000/api"
+BASE_URL = "http://localhost:8000"
+API_URL = f"{BASE_URL}/api"
+AUTH_URL = f"{BASE_URL}/auth"
 
-def test_upload_from_url():
-    response = requests.post(f"{BASE_URL}/upload", json={
-        "url": "https://httpbin.org/json",
-        "file_id": "python-test",
-        "is_public": False
-    })
-    print("Upload from URL:", response.json())
-    return response.json()
-
-def test_list_files():
-    response = requests.get(f"{BASE_URL}/files")
-    print("List files:", response.json())
-    return response.json()
-
-def test_download_file(file_id, is_public=False):
-    response = requests.get(f"{BASE_URL}/download/{file_id}", 
-                          params={"is_public": is_public})
-    print(f"Download status: {response.status_code}")
-    return response.content
-
-def test_rename_file(file_id, new_name, is_public=False):
-    response = requests.post(f"{BASE_URL}/rename/{file_id}", 
-                           params={"is_public": is_public},
-                           json={"new_file_id": new_name})
-    print("Rename:", response.json())
-    return response.json()
-
-def test_toggle_share(file_id, current_is_public=False):
-    response = requests.post(f"{BASE_URL}/share/{file_id}",
-                           params={"current_is_public": current_is_public})
-    print("Toggle share:", response.json())
-    return response.json()
-
-def test_delete_file(file_id, is_public=False):
-    response = requests.delete(f"{BASE_URL}/files/{file_id}",
-                             params={"is_public": is_public})
-    print("Delete:", response.json())
-    return response.json()
+class FileStorageAPITester:
+    def __init__(self, username="admin", password="admin"):
+        self.username = username
+        self.password = password
+        self.token = None
+        self.headers = {}
+    
+    def login(self):
+        """Login and get JWT token"""
+        response = requests.post(f"{AUTH_URL}/login", json={
+            "username": self.username,
+            "password": self.password
+        })
+        
+        if response.status_code == 200:
+            data = response.json()
+            self.token = data["access_token"]
+            self.headers = {"Authorization": f"Bearer {self.token}"}
+            print("✅ Login successful")
+            return True
+        else:
+            print(f"❌ Login failed: {response.status_code} - {response.text}")
+            return False
+    
+    def test_auth_endpoints(self):
+        """Test authentication endpoints"""
+        print("\n=== Testing Authentication Endpoints ===")
+        
+        # Test /auth/me
+        response = requests.get(f"{AUTH_URL}/me", headers=self.headers)
+        if response.status_code == 200:
+            print(f"✅ GET /auth/me: {response.json()}")
+        else:
+            print(f"❌ GET /auth/me failed: {response.status_code}")
+        
+        # Test /auth/logout
+        response = requests.post(f"{AUTH_URL}/logout", headers=self.headers)
+        if response.status_code == 200:
+            print(f"✅ POST /auth/logout: {response.json()}")
+        else:
+            print(f"❌ POST /auth/logout failed: {response.status_code}")
+    
+    def test_upload_from_url(self):
+        """Test file upload from URL"""
+        response = requests.post(f"{API_URL}/upload", 
+                               headers=self.headers,
+                               json={
+                                   "url": "https://httpbin.org/json",
+                                   "file_id": "python-test",
+                                   "is_public": False
+                               })
+        print(f"Upload from URL: {response.status_code} - {response.json() if response.status_code == 200 else response.text}")
+        return response.json() if response.status_code == 200 else None
+    
+    def test_list_files(self):
+        """Test file listing"""
+        response = requests.get(f"{API_URL}/files", headers=self.headers)
+        if response.status_code == 200:
+            print(f"List files: {response.json()}")
+        else:
+            print(f"❌ List files failed: {response.status_code} - {response.text}")
+        return response.json() if response.status_code == 200 else []
+    
+    def test_download_file(self, file_id, is_public=False):
+        """Test file download"""
+        # Test with auth for private files
+        if not is_public:
+            response = requests.get(f"{API_URL}/download/{file_id}", 
+                                  headers=self.headers,
+                                  params={"is_public": is_public})
+        else:
+            # Test without auth for public files
+            response = requests.get(f"{API_URL}/download/{file_id}", 
+                                  params={"is_public": is_public})
+        
+        print(f"Download {file_id} (public={is_public}): {response.status_code}")
+        return response.content if response.status_code == 200 else None
+    
+    def test_rename_file(self, file_id, new_name, is_public=False):
+        """Test file rename"""
+        response = requests.post(f"{API_URL}/rename/{file_id}", 
+                               headers=self.headers,
+                               params={"is_public": is_public},
+                               json={"new_file_id": new_name})
+        print(f"Rename {file_id} to {new_name}: {response.status_code} - {response.json() if response.status_code == 200 else response.text}")
+        return response.json() if response.status_code == 200 else None
+    
+    def test_toggle_share(self, file_id, current_is_public=False):
+        """Test privacy toggle"""
+        response = requests.post(f"{API_URL}/share/{file_id}",
+                               headers=self.headers,
+                               params={"current_is_public": current_is_public})
+        print(f"Toggle share {file_id}: {response.status_code} - {response.json() if response.status_code == 200 else response.text}")
+        return response.json() if response.status_code == 200 else None
+    
+    def test_delete_file(self, file_id, is_public=False):
+        """Test file deletion"""
+        response = requests.delete(f"{API_URL}/files/{file_id}",
+                                 headers=self.headers,
+                                 params={"is_public": is_public})
+        print(f"Delete {file_id}: {response.status_code} - {response.json() if response.status_code == 200 else response.text}")
+        return response.json() if response.status_code == 200 else None
+    
+    def test_access_control(self):
+        """Test access control (unauthorized requests)"""
+        print("\n=== Testing Access Control ===")
+        
+        # Test without auth token - should fail
+        response = requests.get(f"{API_URL}/files")
+        if response.status_code == 401:
+            print("✅ Unauthorized access blocked correctly")
+        else:
+            print(f"❌ Unauthorized access not blocked: {response.status_code}")
+        
+        # Test private file download without auth - should fail
+        response = requests.get(f"{API_URL}/download/test-file?is_public=false")
+        if response.status_code == 401:
+            print("✅ Private file access blocked correctly")
+        else:
+            print(f"❌ Private file access not blocked: {response.status_code}")
+    
+    def run_full_test_suite(self):
+        """Run complete test suite"""
+        print("🚀 Starting File Storage API Phase 2 Test Suite")
+        
+        # Step 1: Login
+        if not self.login():
+            return
+        
+        # Step 2: Test auth endpoints
+        self.test_auth_endpoints()
+        
+        # Step 3: Test access control
+        self.test_access_control()
+        
+        print("\n=== Testing File Operations ===")
+        
+        # Step 4: Upload file
+        upload_result = self.test_upload_from_url()
+        
+        # Step 5: List files
+        files = self.test_list_files()
+        
+        # Step 6: Download file
+        self.test_download_file("python-test", is_public=False)
+        
+        # Step 7: Rename file
+        self.test_rename_file("python-test", "python-renamed", is_public=False)
+        
+        # Step 8: Toggle privacy
+        self.test_toggle_share("python-renamed", current_is_public=False)
+        
+        # Step 9: Download as public file
+        self.test_download_file("python-renamed", is_public=True)
+        
+        # Step 10: Delete file
+        self.test_delete_file("python-renamed", is_public=True)
+        
+        print("\n✅ Test suite completed!")
 
 if __name__ == "__main__":
-    # Run tests
-    upload_result = test_upload_from_url()
-    test_list_files()
-    test_download_file("python-test")
-    test_rename_file("python-test", "python-renamed")
-    test_toggle_share("python-renamed", False)
-    test_delete_file("python-renamed", True)
+    tester = FileStorageAPITester()
+    tester.run_full_test_suite()
 ```
 
 Run the test:
 ```bash
-python test_api.py
+python test_api_phase2.py
+```
+
+Expected output:
+```
+🚀 Starting File Storage API Phase 2 Test Suite
+✅ Login successful
+
+=== Testing Authentication Endpoints ===
+✅ GET /auth/me: {'username': 'admin'}
+✅ POST /auth/logout: {'message': 'Successfully logged out'}
+
+=== Testing Access Control ===
+✅ Unauthorized access blocked correctly
+✅ Private file access blocked correctly
+
+=== Testing File Operations ===
+Upload from URL: 200 - {'file_id': 'python-test', 'object_path': 'private/python-test', 'size': 429, 'is_public': False}
+List files: [{'file_id': 'python-test', 'object_path': 'private/python-test', 'size': 429, 'is_public': False}]
+Download python-test (public=False): 200
+Rename python-test to python-renamed: 200 - {'old_file_id': 'python-test', 'new_file_id': 'python-renamed', 'object_path': 'private/python-renamed', 'is_public': False}
+Toggle share python-renamed: 200 - {'file_id': 'python-renamed', 'object_path': 'public/python-renamed', 'was_public': False, 'is_public': True}
+Download python-renamed (public=True): 200
+Delete python-renamed: 200 - {'message': 'File python-renamed deleted successfully'}
+
+✅ Test suite completed!
 ```
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **GCS Authentication Error**
+1. **Authentication Errors**
+   - **401 Unauthorized**: Check that you're sending the JWT token in the Authorization header
+   - **Invalid credentials**: Verify username/password match environment variables
+   - **Token expired**: JWT tokens expire after 1 hour - get a new token by logging in again
+
+2. **Environment Variable Issues**  
+   - **Login fails with correct credentials**: Check `PASSWORD_HASH` environment variable matches SHA256 hash of password
+   - **JWT errors**: Ensure `JWT_SECRET_KEY` is set (uses default for development)
+   - Generate password hash: `python -c "import hashlib; print(hashlib.sha256('your-password'.encode()).hexdigest())"`
+
+3. **GCS Authentication Error**
    - Ensure `GOOGLE_APPLICATION_CREDENTIALS` points to a valid service account key
    - Verify the service account has the necessary permissions
+   - For local development, use: `gcloud auth application-default login`
 
-2. **Bucket Not Found**
+4. **Bucket Not Found**
    - Confirm the bucket name is correct in environment variables
    - Ensure the bucket exists in your GCP project
 
-3. **Import Errors**
+5. **Import Errors**
    - Make sure all dependencies are installed: `pip install -r requirements.txt`
    - Verify you're in the correct directory and virtual environment
+   - Check that PyJWT and passlib are installed
 
-4. **Port Already in Use**
+6. **Port Already in Use**
    - Change the port: `uvicorn app.main:app --reload --port 8001`
    - Or kill the process using port 8000
 
@@ -264,15 +509,37 @@ For basic API structure testing without GCS setup, the endpoints will return err
 ## Expected Test Results
 
 When properly configured, you should see:
-- Successful file uploads (both URL and direct)
-- Files appearing in your GCS bucket under `private/` or `public/` folders
-- Correct file listing with size information
-- Successful downloads, renames, share toggles, and deletions
-- Appropriate error responses for invalid operations
+
+### Authentication
+- ✅ Successful login with valid credentials  
+- ✅ 401 errors for requests without valid JWT tokens
+- ✅ Proper JWT token format in login response
+- ✅ User info accessible via /auth/me endpoint
+
+### File Operations  
+- ✅ Successful file uploads (both URL and direct) with authentication
+- ✅ Files appearing in your GCS bucket under `private/` or `public/` folders
+- ✅ Correct file listing with size information (authenticated)
+- ✅ Private file downloads require authentication
+- ✅ Public file downloads work without authentication
+- ✅ Successful renames, share toggles, and deletions (all authenticated)
+
+### Access Control
+- ✅ 401 errors for all file operations without authentication
+- ✅ Private files properly protected
+- ✅ Public files accessible without authentication
+- ✅ Appropriate error responses for invalid operations
+
+## Phase Status
+
+- ✅ **Phase 1**: Core Logic (file operations, GCS integration) - **COMPLETED**
+- ✅ **Phase 2**: Authentication & Access Control - **COMPLETED** 
+- 🔄 **Phase 3**: End-to-End AES Encryption - **PLANNED**
+- 🔄 **Cloud Phase**: Deploy to Google App Engine - **READY**
 
 ## Next Steps
 
-After successful Phase 1 testing:
-1. **Phase 2**: Implement JWT authentication
-2. **Phase 3**: Add optional AES encryption
-3. **Cloud Phase**: Deploy to Google App Engine
+After successful Phase 2 testing:
+1. **Deploy to GAE**: Use the updated app.yaml with authentication environment variables
+2. **Phase 3**: Add optional end-to-end AES encryption
+3. **Production Hardening**: Implement additional security measures
