@@ -37,12 +37,12 @@
                         ${fileSize ? `<div class="file-size">Size: ${formatFileSize(parseInt(fileSize))}</div>` : ''}
                         ${contentType ? `<div class="file-type">Type: ${contentType}</div>` : ''}
                     </div>
-                    <div style="display: flex; gap: 1rem; justify-content: center; align-items: center; flex-wrap: wrap;">
+                    <div style="display: flex; gap: 1rem; justify-content: center; align-items: stretch; flex-wrap: wrap;">
                         <button class="btn" onclick="downloadFile('${escapeHtml(fileName)}')">
                             Download File
                         </button>
                         <button class="btn btn-secondary" onclick="copyDownloadLink()">Copy Link</button>
-                        <a href="/files" class="btn btn-secondary" style="text-decoration: none;">Browse Files</a>
+                        <a href="/files" class="btn btn-secondary" style="text-decoration: none; color: white; display: inline-block; box-sizing: border-box;">Browse Files</a>
                     </div>
                     <div style="margin-top: 1rem;">
                         <p style="color: #6b7280; font-size: 0.875rem;">
@@ -56,7 +56,7 @@
                         <strong>File not found</strong><br>
                         The public file "${escapeHtml(fileName)}" does not exist.
                     </div>
-                    <a href="/files" class="btn">Browse Files</a>
+                    <a href="/files" class="btn" style="text-decoration: none; color: white;">Browse Files</a>
                 `;
             } else {
                 throw new Error('Failed to access file');
@@ -67,7 +67,7 @@
                     <strong>Error accessing file</strong><br>
                     Please check your connection and try again.
                 </div>
-                <a href="/files" class="btn">Browse Files</a>
+                <a href="/files" class="btn" style="text-decoration: none; color: white;">Browse Files</a>
             `;
         }
     }

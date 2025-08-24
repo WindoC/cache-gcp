@@ -42,12 +42,12 @@
                         ${fileSize ? `<div class="file-size">Size: ${formatFileSize(parseInt(fileSize))}</div>` : ''}
                         ${contentType ? `<div class="file-type">Type: ${contentType}</div>` : ''}
                     </div>
-                    <div style="display: flex; gap: 1rem; justify-content: center; align-items: center;">
+                    <div style="display: flex; gap: 1rem; justify-content: center; align-items: stretch;">
                         <button class="btn" onclick="downloadFile('${escapeHtml(fileName)}')">
                             Download File
                         </button>
                         <button class="btn btn-secondary" onclick="copyDownloadLink()">Copy Link</button>
-                        <a href="/files" class="btn btn-secondary" style="text-decoration: none;">Back to Files</a>
+                        <a href="/files" class="btn btn-secondary" style="text-decoration: none; color: white; display: inline-block; box-sizing: border-box;">Back to Files</a>
                     </div>
                 `;
             } else if (response.status === 404) {
@@ -56,7 +56,7 @@
                         <strong>File not found</strong><br>
                         The file "${escapeHtml(fileName)}" does not exist or you don't have permission to access it.
                     </div>
-                    <a href="/files" class="btn">Back to Files</a>
+                    <a href="/files" class="btn" style="text-decoration: none; color: white;">Back to Files</a>
                 `;
             } else {
                 throw new Error('Failed to access file');
@@ -67,7 +67,7 @@
                     <strong>Error accessing file</strong><br>
                     Please check your connection and try again.
                 </div>
-                <a href="/files" class="btn">Back to Files</a>
+                <a href="/files" class="btn" style="text-decoration: none; color: white;">Back to Files</a>
             `;
         }
     }
