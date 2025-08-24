@@ -1,13 +1,14 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends, Request
-from fastapi.responses import StreamingResponse, Response
+from fastapi.responses import StreamingResponse, Response, JSONResponse
 from pydantic import BaseModel, HttpUrl
-from typing import Optional, List
+from typing import Optional, List, Union, Dict, Any
 import uuid
 import io
 import os
 from urllib.parse import urlparse
 from app.utils.gcs_client import gcs_client
 from app.utils.auth import get_current_user, get_optional_current_user
+from app.utils.encryption_middleware import handle_encrypted_request, create_encrypted_response, requires_encryption
 
 router = APIRouter(prefix="/api", tags=["files"])
 
@@ -15,6 +16,9 @@ class UploadURLRequest(BaseModel):
     url: HttpUrl
     file_id: Optional[str] = None
     is_public: bool = False
+
+class EncryptedRequest(BaseModel):
+    encrypted_payload: str
 
 class RenameRequest(BaseModel):
     new_file_id: str
@@ -26,35 +30,52 @@ class FileResponse(BaseModel):
     is_public: bool
 
 @router.post("/upload/url", response_model=dict)
-async def upload_from_url(request: UploadURLRequest, current_user: dict = Depends(get_current_user)):
+async def upload_from_url(request: Union[UploadURLRequest, EncryptedRequest], current_user: dict = Depends(get_current_user)):
     try:
-        # Priority: API input -> filename from URL -> UUID
-        if request.file_id:
+        # Handle encrypted request
+        if isinstance(request, EncryptedRequest):
+            decrypted_data = handle_encrypted_request(request.dict())
+            url = decrypted_data.get('url')
+            file_id = decrypted_data.get('file_id')
+            is_public = decrypted_data.get('is_public', False)
+        else:
+            url = str(request.url)
             file_id = request.file_id
+            is_public = request.is_public
+        
+        if not url:
+            raise HTTPException(status_code=400, detail="URL is required")
+        
+        # Priority: API input -> filename from URL -> UUID
+        if file_id:
+            final_file_id = file_id
         else:
             # Extract filename from URL
-            parsed_url = urlparse(str(request.url))
+            parsed_url = urlparse(url)
             filename = os.path.basename(parsed_url.path)
             # Use filename if it exists and is not empty, otherwise use UUID
-            file_id = filename if filename and filename != '/' else str(uuid.uuid4())
+            final_file_id = filename if filename and filename != '/' else str(uuid.uuid4())
         
         # Check if file already exists
-        # if gcs_client.file_exists(file_id, request.is_public):
-        if gcs_client.file_exists(file_id, True) or gcs_client.file_exists(file_id, False):
+        if gcs_client.file_exists(final_file_id, True) or gcs_client.file_exists(final_file_id, False):
             raise HTTPException(status_code=409, detail="File already exists")
         
         object_path, size = gcs_client.upload_from_url(
-            str(request.url), 
-            file_id, 
-            request.is_public
+            url, 
+            final_file_id, 
+            is_public
         )
         
-        return {
-            "file_id": file_id,
+        response_data = {
+            "file_id": final_file_id,
             "object_path": object_path,
             "size": size,
-            "is_public": request.is_public
+            "is_public": is_public
         }
+        
+        # Return encrypted response if request was encrypted and encryption is available
+        should_encrypt = isinstance(request, EncryptedRequest) and requires_encryption()
+        return create_encrypted_response(response_data, should_encrypt)
     
     except ValueError as e:
         raise HTTPException(status_code=413, detail=str(e))
@@ -63,50 +84,87 @@ async def upload_from_url(request: UploadURLRequest, current_user: dict = Depend
 
 @router.post("/upload/direct", response_model=dict)
 async def upload_direct(
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
     file_id: Optional[str] = Form(None),
-    is_public: bool = Form(False),
+    is_public: Optional[bool] = Form(None),
+    encrypted_payload: Optional[str] = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
     try:
-        # Priority: API input -> original filename -> UUID
-        if file_id:
-            final_file_id = file_id
+        # Handle encrypted request
+        if encrypted_payload:
+            decrypted_data = handle_encrypted_request({"encrypted_payload": encrypted_payload})
+            # For encrypted uploads, file data is base64 encoded in the payload
+            file_data_b64 = decrypted_data.get('file_data')
+            if not file_data_b64:
+                raise HTTPException(status_code=400, detail="Missing file_data in encrypted payload")
+            
+            import base64
+            file_data = base64.b64decode(file_data_b64)
+            final_file_id = decrypted_data.get('file_id')
+            is_public_final = decrypted_data.get('is_public', False)
+            original_filename = decrypted_data.get('filename')
         else:
-            # Use original filename if available, otherwise UUID
-            final_file_id = file.filename if file.filename else str(uuid.uuid4())
+            if not file:
+                raise HTTPException(status_code=400, detail="File is required")
+            file_data = await file.read()
+            final_file_id = file_id
+            is_public_final = is_public if is_public is not None else False
+            original_filename = file.filename
+        
+        # Priority: API input -> original filename -> UUID
+        if not final_file_id:
+            final_file_id = original_filename if original_filename else str(uuid.uuid4())
         
         # Check if file already exists
-        # if gcs_client.file_exists(final_file_id, is_public):
         if gcs_client.file_exists(final_file_id, True) or gcs_client.file_exists(final_file_id, False):
             raise HTTPException(status_code=409, detail="File already exists")
         
-        file_data = await file.read()
-        object_path, size = gcs_client.upload_from_file(file_data, final_file_id, is_public)
+        object_path, size = gcs_client.upload_from_file(file_data, final_file_id, is_public_final)
         
-        return {
+        response_data = {
             "file_id": final_file_id,
             "object_path": object_path,
             "size": size,
-            "is_public": is_public,
-            "original_filename": file.filename
+            "is_public": is_public_final,
+            "original_filename": original_filename
         }
+        
+        # Return encrypted response if request was encrypted and encryption is available
+        should_encrypt = encrypted_payload is not None and requires_encryption()
+        return create_encrypted_response(response_data, should_encrypt)
     
     except ValueError as e:
         raise HTTPException(status_code=413, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
-@router.get("/files", response_model=List[FileResponse])
-async def list_files(is_public: Optional[bool] = None, current_user: dict = Depends(get_current_user)):
+@router.get("/files")
+async def list_files(
+    is_public: Optional[bool] = None, 
+    encrypted: Optional[bool] = None,
+    current_user: dict = Depends(get_current_user)
+):
     try:
         files = gcs_client.list_files(is_public)
-        return files
+        response_data = files
+        
+        # Return encrypted response if requested and encryption is available
+        should_encrypt = encrypted is True and requires_encryption()
+        if should_encrypt:
+            return create_encrypted_response({"files": response_data}, should_encrypt)
+        else:
+            return response_data
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list files: {str(e)}")
 
 @router.api_route("/download/private/{file_id}", methods=["GET", "HEAD"])
-async def download_private_file(file_id: str, request: Request, current_user: dict = Depends(get_current_user)):
+async def download_private_file(
+    file_id: str, 
+    request: Request, 
+    encrypted: Optional[bool] = None,
+    current_user: dict = Depends(get_current_user)
+):
     """Download private file - requires authentication"""
     try:
         # For HEAD requests, only get file info without downloading
@@ -123,11 +181,25 @@ async def download_private_file(file_id: str, request: Request, current_user: di
         # For GET requests, download and stream the file
         file_data = gcs_client.download_file(file_id, is_public=False)
         
-        return StreamingResponse(
-            io.BytesIO(file_data), 
-            media_type="application/octet-stream",
-            headers={"Content-Disposition": f"attachment; filename={file_id}"}
-        )
+        # If encryption is requested and available, return encrypted response
+        should_encrypt = encrypted is True and requires_encryption()
+        if should_encrypt:
+            import base64
+            file_data_b64 = base64.b64encode(file_data).decode()
+            response_data = {
+                "file_id": file_id,
+                "file_data": file_data_b64,
+                "size": len(file_data)
+            }
+            encrypted_response = create_encrypted_response(response_data, should_encrypt)
+            return JSONResponse(content=encrypted_response)
+        else:
+            # Return normal file stream
+            return StreamingResponse(
+                io.BytesIO(file_data), 
+                media_type="application/octet-stream",
+                headers={"Content-Disposition": f"attachment; filename={file_id}"}
+            )
     
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="File not found")

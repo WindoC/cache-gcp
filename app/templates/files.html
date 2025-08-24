@@ -28,10 +28,21 @@
     
     async function loadFiles() {
         try {
-            const response = await apiCall('/api/files');
+            // Always use encrypted API call (will prompt for key if needed)
+            const response = await encryptedApiCall('/api/files');
             
             if (response.ok) {
-                const files = await response.json();
+                const data = await response.json();
+                
+                // Handle both encrypted response format and regular format
+                let files;
+                if (data.files && Array.isArray(data.files)) {
+                    files = data.files; // Encrypted response format
+                } else if (Array.isArray(data)) {
+                    files = data; // Regular response format
+                } else {
+                    throw new Error('Unexpected response format');
+                }
                 
                 // Separate files by privacy status
                 const privateFiles = files.filter(file => !file.is_public);
@@ -44,6 +55,7 @@
                 document.getElementById('public-files').innerHTML = '<p>Error loading public files</p>';
             }
         } catch (error) {
+            console.error('Failed to load files:', error);
             document.getElementById('private-files').innerHTML = '<p>Error loading private files</p>';
             document.getElementById('public-files').innerHTML = '<p>Error loading public files</p>';
         }

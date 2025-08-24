@@ -5,7 +5,7 @@ env_variables:
   USERNAME: "admin"
   PASSWORD_HASH: "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"  # SHA256 of "password"
   JWT_SECRET_KEY: "change-this-to-a-secure-random-string-in-production"
-  AES_KEY_HASH: "replace-with-actual-sha256-hash"  # For Phase 3
+  AES_KEY_HASH: "6ca13d52ca70c883e0f0bb101e425a89e8624de51db2d2392593af6a84118090"  # SHA256 of empty string - replace in production
   GCP_PROJECT: "replace-with-project-id"
   GCS_BUCKET: "replace-with-bucket-name"
 

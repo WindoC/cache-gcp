@@ -335,6 +335,237 @@
         document.addEventListener('DOMContentLoaded', updateNavigation);
     </script>
     
+    <script>
+        // Include crypto utilities inline
+        // AES-GCM Encryption utilities for frontend
+        class AESCrypto {
+            constructor() {
+                this.keyHash = null;
+                this.key = null;
+            }
+
+            // Get or prompt for AES key
+            async getKey() {
+                if (this.key) return this.key;
+                
+                const storedHash = localStorage.getItem('aes_key_hash');
+                if (storedHash) {
+                    this.keyHash = storedHash;
+                    // Try to derive key from stored hash
+                    this.key = await this.deriveKeyFromHash(storedHash);
+                    return this.key;
+                }
+                
+                return await this.promptForKey();
+            }
+
+            // Prompt user for AES key
+            async promptForKey() {
+                const userKey = prompt('Please enter your AES encryption key:');
+                if (!userKey) {
+                    throw new Error('AES key is required for encryption');
+                }
+                
+                // Hash the user key
+                const encoder = new TextEncoder();
+                const data = encoder.encode(userKey);
+                const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+                const hashArray = Array.from(new Uint8Array(hashBuffer));
+                this.keyHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+                
+                // Store hash in localStorage
+                localStorage.setItem('aes_key_hash', this.keyHash);
+                
+                // Derive actual key
+                this.key = await this.deriveKeyFromHash(this.keyHash);
+                return this.key;
+            }
+
+            // Derive 256-bit key from hash
+            async deriveKeyFromHash(hash) {
+                // Use first 32 bytes of hash as key material
+                const keyMaterial = new Uint8Array(32);
+                for (let i = 0; i < 32 && i * 2 < hash.length; i++) {
+                    keyMaterial[i] = parseInt(hash.substr(i * 2, 2), 16);
+                }
+                
+                return await crypto.subtle.importKey(
+                    'raw',
+                    keyMaterial,
+                    { name: 'AES-GCM' },
+                    false,
+                    ['encrypt', 'decrypt']
+                );
+            }
+
+            // Encrypt data
+            async encrypt(data) {
+                try {
+                    const key = await this.getKey();
+                    const encoder = new TextEncoder();
+                    
+                    let plaintext;
+                    if (typeof data === 'string') {
+                        plaintext = encoder.encode(data);
+                    } else {
+                        plaintext = encoder.encode(JSON.stringify(data));
+                    }
+                    
+                    // Generate random IV
+                    const iv = crypto.getRandomValues(new Uint8Array(12));
+                    
+                    // Encrypt
+                    const ciphertext = await crypto.subtle.encrypt(
+                        { name: 'AES-GCM', iv: iv },
+                        key,
+                        plaintext
+                    );
+                    
+                    // Combine IV + ciphertext and base64 encode
+                    const combined = new Uint8Array(iv.length + ciphertext.byteLength);
+                    combined.set(iv);
+                    combined.set(new Uint8Array(ciphertext), iv.length);
+                    
+                    // Convert to base64 without using spread operator for large arrays
+                    let binary = '';
+                    const bytes = combined;
+                    const len = bytes.byteLength;
+                    for (let i = 0; i < len; i++) {
+                        binary += String.fromCharCode(bytes[i]);
+                    }
+                    return btoa(binary);
+                } catch (error) {
+                    console.error('Encryption failed:', error);
+                    throw error;
+                }
+            }
+
+            // Decrypt data
+            async decrypt(encryptedData) {
+                try {
+                    const key = await this.getKey();
+                    
+                    // Decode base64
+                    const binaryString = atob(encryptedData);
+                    const combined = new Uint8Array(binaryString.length);
+                    for (let i = 0; i < binaryString.length; i++) {
+                        combined[i] = binaryString.charCodeAt(i);
+                    }
+                    
+                    // Extract IV and ciphertext
+                    const iv = combined.slice(0, 12);
+                    const ciphertext = combined.slice(12);
+                    
+                    // Decrypt
+                    const plaintext = await crypto.subtle.decrypt(
+                        { name: 'AES-GCM', iv: iv },
+                        key,
+                        ciphertext
+                    );
+                    
+                    const decoder = new TextDecoder();
+                    const decryptedText = decoder.decode(plaintext);
+                    
+                    // Try to parse as JSON, return string if not valid JSON
+                    try {
+                        return JSON.parse(decryptedText);
+                    } catch {
+                        return decryptedText;
+                    }
+                } catch (error) {
+                    console.error('Decryption failed:', error);
+                    // Clear stored key hash on decryption failure
+                    localStorage.removeItem('aes_key_hash');
+                    this.key = null;
+                    this.keyHash = null;
+                    throw new Error('Decryption failed. Please re-enter your key.');
+                }
+            }
+
+            // Clear stored key
+            clearKey() {
+                localStorage.removeItem('aes_key_hash');
+                this.key = null;
+                this.keyHash = null;
+            }
+
+            // Check if encryption is available (key hash stored)
+            isAvailable() {
+                return localStorage.getItem('aes_key_hash') !== null;
+            }
+        }
+
+        // Global instance
+        const aesCrypto = new AESCrypto();
+
+        // Enhanced API call function with encryption support
+        async function encryptedApiCall(url, options = {}) {
+            // Always get encryption key (will prompt if needed)
+            await aesCrypto.getKey();
+            
+            const isGetRequest = !options.method || options.method === 'GET';
+            
+            if (isGetRequest) {
+                // For GET requests, add encrypted parameter
+                const separator = url.includes('?') ? '&' : '?';
+                const encryptedUrl = `${url}${separator}encrypted=true`;
+                
+                const response = await apiCall(encryptedUrl, options);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.encrypted_payload) {
+                        const decrypted = await aesCrypto.decrypt(data.encrypted_payload);
+                        // Return a Response-like object with decrypted data
+                        return {
+                            ok: true,
+                            status: response.status,
+                            json: async () => decrypted
+                        };
+                    }
+                }
+                return response;
+            } else {
+                // For POST/other requests, encrypt the payload
+                if (options.body) {
+                    let bodyData;
+                    if (typeof options.body === 'string') {
+                        try {
+                            bodyData = JSON.parse(options.body);
+                        } catch {
+                            bodyData = { data: options.body };
+                        }
+                    } else {
+                        bodyData = options.body;
+                    }
+                    
+                    const encryptedPayload = await aesCrypto.encrypt(bodyData);
+                    
+                    options.body = JSON.stringify({ encrypted_payload: encryptedPayload });
+                    options.headers = {
+                        ...options.headers,
+                        'Content-Type': 'application/json'
+                    };
+                }
+                
+                const response = await apiCall(url, options);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.encrypted_payload) {
+                        const decrypted = await aesCrypto.decrypt(data.encrypted_payload);
+                        return {
+                            ok: true,
+                            status: response.status,
+                            json: async () => decrypted
+                        };
+                    }
+                }
+                return response;
+            }
+        }
+    </script>
+    
     {% block scripts %}{% endblock %}
 </body>
 </html>

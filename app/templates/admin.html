@@ -137,7 +137,8 @@
         showProgress();
         
         try {
-            const response = await apiCall('/api/upload/url', {
+            // Always use encrypted API call (will prompt for key if needed)
+            const response = await encryptedApiCall('/api/upload/url', {
                 method: 'POST',
                 body: JSON.stringify({
                     url: url,
@@ -174,13 +175,34 @@
             return;
         }
         
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('is_public', privacy === 'public');
-        
         showProgress();
         
         try {
+            // Always use encrypted upload (will prompt for key if needed)
+            await aesCrypto.getKey();
+            
+            // Read file as base64
+            const fileData = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    // Use the built-in base64 conversion instead of btoa with spread operator
+                    const base64 = reader.result.split(',')[1]; // Remove data:xxx;base64, prefix
+                    resolve(base64);
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file); // This directly gives us base64
+            });
+            
+            const encryptedPayload = await aesCrypto.encrypt({
+                file_data: fileData,
+                filename: file.name,
+                is_public: privacy === 'public'
+            });
+            
+            // Send encrypted form data
+            const formData = new FormData();
+            formData.append('encrypted_payload', encryptedPayload);
+            
             const response = await fetch('/api/upload/direct', {
                 method: 'POST',
                 headers: {
@@ -190,13 +212,19 @@
             });
             
             if (response.ok) {
-                const result = await response.json();
+                const data = await response.json();
+                let result;
+                if (data.encrypted_payload) {
+                    result = await aesCrypto.decrypt(data.encrypted_payload);
+                } else {
+                    result = data;
+                }
                 showAlert(`File uploaded successfully: ${result.file_id}`, 'success');
                 document.getElementById('direct-upload-form').reset();
                 loadFiles();
             } else {
                 const error = await response.json();
-                showAlert(error.detail || 'Upload failed');
+                showAlert(error.detail || 'Encrypted upload failed');
             }
         } catch (error) {
             showAlert('Upload failed. Please try again.');
@@ -207,10 +235,21 @@
     
     async function loadFiles() {
         try {
-            const response = await apiCall('/api/files');
+            // Always use encrypted API call (will prompt for key if needed)
+            const response = await encryptedApiCall('/api/files');
             
             if (response.ok) {
-                const files = await response.json();
+                const data = await response.json();
+                
+                // Handle both encrypted response format and regular format
+                let files;
+                if (data.files && Array.isArray(data.files)) {
+                    files = data.files; // Encrypted response format
+                } else if (Array.isArray(data)) {
+                    files = data; // Regular response format
+                } else {
+                    throw new Error('Unexpected response format');
+                }
                 
                 // Separate files by privacy status
                 const privateFiles = files.filter(file => !file.is_public);
