@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 from app.utils.gcs_client import gcs_client
 from app.utils.auth import get_current_user, get_optional_current_user
 from app.utils.encryption_middleware import handle_encrypted_request, create_encrypted_response, requires_encryption
+from app.utils.form_parser import parse_large_form
 
 router = APIRouter(prefix="/api", tags=["files"])
 
@@ -84,13 +85,25 @@ async def upload_from_url(request: Union[UploadURLRequest, EncryptedRequest], cu
 
 @router.post("/upload/direct", response_model=dict)
 async def upload_direct(
-    file: Optional[UploadFile] = File(None),
-    file_id: Optional[str] = Form(None),
-    is_public: Optional[bool] = Form(None),
-    encrypted_payload: Optional[str] = Form(None),
+    request: Request,
     current_user: dict = Depends(get_current_user)
 ):
     try:
+        # Parse form with large size limit
+        form_data = await parse_large_form(request)
+        
+        # Extract form fields
+        file = form_data.get('file')
+        file_id = form_data.get('file_id')
+        is_public = form_data.get('is_public')
+        encrypted_payload = form_data.get('encrypted_payload')
+        
+        # Debug logging
+        print(f"DEBUG: encrypted_payload present: {encrypted_payload is not None}")
+        print(f"DEBUG: file present: {file is not None}")
+        if encrypted_payload:
+            print(f"DEBUG: encrypted_payload length: {len(encrypted_payload)}")
+            
         # Handle encrypted request
         if encrypted_payload:
             decrypted_data = handle_encrypted_request({"encrypted_payload": encrypted_payload})
@@ -110,7 +123,7 @@ async def upload_direct(
             file_data = await file.read()
             final_file_id = file_id
             is_public_final = is_public if is_public is not None else False
-            original_filename = file.filename
+            original_filename = file.filename if hasattr(file, 'filename') else None
         
         # Priority: API input -> original filename -> UUID
         if not final_file_id:
