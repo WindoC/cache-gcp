@@ -78,18 +78,17 @@ The system evolves through phases:
   * JWT-based login/logout.
   * Private vs. public file access enforcement.
 
-* **Phase 3 — End-to-End AES Encryption**
+* **Phase 3 — End-to-End AES Encryption** ✅
 
-  * Add optional encryption:
+  * **Mandatory encryption** for specific endpoints (no fallback):
 
-    * Frontend requires user-supplied AES key.
-    * Store only SHA256 hash in localStorage.
-    * Re-prompt user if:
-
-      * Hash not present, or
-      * Decryption error occurs.
-    * Backend loads AES key SHA256 hash from env vars.
-    * Requests/responses encrypted with AES-GCM.
+    * `/files` page ↔ `GET /api/files` (encrypted file listing)
+    * `/admin` page ↔ `POST /api/upload/url`, `POST /api/upload/direct` (encrypted uploads)
+    * `/download/private/{file_id}` page ↔ `GET /api/download/private/{file_id}` (encrypted downloads)
+    * Frontend requires user-supplied AES key with localStorage persistence.
+    * User prompted on first use or decryption failures.
+    * Backend validates against AES key SHA256 hash from env vars.
+    * All payloads use AES-GCM encryption with base64 encoding.
 
 ### Cloud phase:
 
@@ -165,10 +164,11 @@ The system evolves through phases:
 * `GET /auth/me` — Get current user information.
 
 **File Operations:**
-* `POST /api/upload/url` — Upload from external URL.
-* `POST /api/upload/direct` — Upload file directly from browser (multipart/form-data).
-* `GET /api/files` — List files.
-* `GET /api/download/{file_id}` — Download file.
+* `POST /api/upload/url` — Upload from external URL (🔒 encryption required).
+* `POST /api/upload/direct` — Upload file directly from browser (🔒 encryption required).
+* `GET /api/files` — List files (🔒 encryption required).
+* `GET /api/download/private/{file_id}` — Download private file (🔒 encryption required).
+* `GET /api/download/public/{file_id}` — Download public file (no auth required).
 * `POST /api/rename/{file_id}` — Rename file.
 * `POST /api/share/{file_id}` — Toggle private/public.
 * `DELETE /api/files/{file_id}` — Delete file.
@@ -184,20 +184,26 @@ The system evolves through phases:
 * Strong password hash in env vars.
 * GCS IAM least privilege.
 
-### 6.2 End-to-End AES Encryption (Phase 3+)
+### 6.2 End-to-End AES Encryption (Phase 3) ✅
 
-#### Frontend
+**Implemented for specific endpoints with no fallback options:**
 
-* User prompted to input AES key.
-* SHA256 hash stored in localStorage.
-* If missing or decryption fails → user must re-enter key.
-* Payloads encrypted with AES-GCM before sending.
+#### Frontend (Web Crypto API)
 
-#### Backend
+* User prompted to input AES key on first use.
+* SHA256 hash stored in localStorage for persistence.
+* Automatic re-prompting on decryption failures.
+* AES-GCM encryption with random IV per operation.
+* Base64 encoding for encrypted payloads.
+* Large file support (up to 250MB encrypted payloads).
 
-* AES key SHA256 hash stored in environment variables.
-* Backend decrypts client payloads using AES-GCM.
-* Responses encrypted before sending back.
+#### Backend (Python cryptography)
+
+* AES key SHA256 hash validation from environment variables.
+* AES-GCM decryption of client payloads.
+* Custom form parser for large encrypted uploads.
+* HTTP 400/501 error responses for missing encryption.
+* Encrypted responses for all protected endpoints.
 
 #### Risks
 
@@ -261,8 +267,8 @@ env_variables:
 
 ## 9. Success Criteria
 
-* Phase 1: Core upload/list/download/delete/share tested locally.
-* Phase 2: JWT auth and access control functional.
-* Phase 3: End-to-end AES encryption functional with user-supplied key.
-* Cloud phase: Deployment succeeds on GAE Standard, app scales automatically.
-* User can reliably upload, manage, and share files.
+* Phase 1: Core upload/list/download/delete/share tested locally. ✅
+* Phase 2: JWT auth and access control functional. ✅
+* Phase 3: End-to-end AES encryption with mandatory enforcement on specific endpoints. ✅
+* Cloud phase: Ready for GAE Standard deployment with auto-scaling.
+* User can reliably upload, manage, and share files with optional encryption.
