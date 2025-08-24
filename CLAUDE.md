@@ -44,7 +44,7 @@ project-root/
 
 - `POST /login` — Authenticate, return JWT
 - `POST /logout` — Invalidate JWT
-- `POST /upload` — Upload from external URL
+- `POST /upload/url` — Upload from external URL
 - `POST /upload/direct` — Upload file directly from browser (multipart/form-data)
 - `GET /files` — List files
 - `GET /download/{file_id}` — Download file

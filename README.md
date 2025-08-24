@@ -73,7 +73,7 @@ Configure these environment variables for authentication and GCS:
 - `GET /auth/me` - Get current user information
 
 ### File Operations (Authentication Required)
-- `POST /api/upload` - Upload file from external URL
+- `POST /api/upload/url` - Upload file from external URL
 - `POST /api/upload/direct` - Upload file directly from browser
 - `GET /api/files` - List all files (with optional `is_public` filter)
 - `POST /api/rename/{file_id}` - Rename file (specify `is_public` query param)

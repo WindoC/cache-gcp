@@ -163,7 +163,7 @@ curl -X POST "http://localhost:8000/auth/logout" \
 
 #### 2. Test File Upload from URL (Requires Authentication)
 ```bash
-curl -X POST "http://localhost:8000/api/upload" \
+curl -X POST "http://localhost:8000/api/upload/url" \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer $TOKEN" \
      -d '{
@@ -301,7 +301,7 @@ class FileStorageAPITester:
     
     def test_upload_from_url(self):
         """Test file upload from URL"""
-        response = requests.post(f"{API_URL}/upload", 
+        response = requests.post(f"{API_URL}/upload/url", 
                                headers=self.headers,
                                json={
                                    "url": "https://httpbin.org/json",

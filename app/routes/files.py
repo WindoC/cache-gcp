@@ -23,7 +23,7 @@ class FileResponse(BaseModel):
     size: int
     is_public: bool
 
-@router.post("/upload", response_model=dict)
+@router.post("/upload/url", response_model=dict)
 async def upload_from_url(request: UploadURLRequest, current_user: dict = Depends(get_current_user)):
     try:
         file_id = request.file_id or str(uuid.uuid4())
