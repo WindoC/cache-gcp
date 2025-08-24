@@ -4,6 +4,8 @@ from pydantic import BaseModel, HttpUrl
 from typing import Optional, List
 import uuid
 import io
+import os
+from urllib.parse import urlparse
 from app.utils.gcs_client import gcs_client
 from app.utils.auth import get_current_user, get_optional_current_user
 
@@ -26,10 +28,19 @@ class FileResponse(BaseModel):
 @router.post("/upload/url", response_model=dict)
 async def upload_from_url(request: UploadURLRequest, current_user: dict = Depends(get_current_user)):
     try:
-        file_id = request.file_id or str(uuid.uuid4())
+        # Priority: API input -> filename from URL -> UUID
+        if request.file_id:
+            file_id = request.file_id
+        else:
+            # Extract filename from URL
+            parsed_url = urlparse(str(request.url))
+            filename = os.path.basename(parsed_url.path)
+            # Use filename if it exists and is not empty, otherwise use UUID
+            file_id = filename if filename and filename != '/' else str(uuid.uuid4())
         
         # Check if file already exists
-        if gcs_client.file_exists(file_id, request.is_public):
+        # if gcs_client.file_exists(file_id, request.is_public):
+        if gcs_client.file_exists(file_id, True) or gcs_client.file_exists(file_id, False):
             raise HTTPException(status_code=409, detail="File already exists")
         
         object_path, size = gcs_client.upload_from_url(
@@ -58,17 +69,23 @@ async def upload_direct(
     current_user: dict = Depends(get_current_user)
 ):
     try:
-        file_id = file_id or str(uuid.uuid4())
+        # Priority: API input -> original filename -> UUID
+        if file_id:
+            final_file_id = file_id
+        else:
+            # Use original filename if available, otherwise UUID
+            final_file_id = file.filename if file.filename else str(uuid.uuid4())
         
         # Check if file already exists
-        if gcs_client.file_exists(file_id, is_public):
+        # if gcs_client.file_exists(final_file_id, is_public):
+        if gcs_client.file_exists(final_file_id, True) or gcs_client.file_exists(final_file_id, False):
             raise HTTPException(status_code=409, detail="File already exists")
         
         file_data = await file.read()
-        object_path, size = gcs_client.upload_from_file(file_data, file_id, is_public)
+        object_path, size = gcs_client.upload_from_file(file_data, final_file_id, is_public)
         
         return {
-            "file_id": file_id,
+            "file_id": final_file_id,
             "object_path": object_path,
             "size": size,
             "is_public": is_public,
