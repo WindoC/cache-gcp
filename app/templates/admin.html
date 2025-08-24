@@ -1,0 +1,337 @@
+{% extends "base.html" %}
+
+{% block title %}Admin - File Storage{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>File Management</h2>
+    <p>Upload, manage, and organize your files</p>
+</div>
+
+<div class="card">
+    <h3>Upload Files</h3>
+    
+    <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
+        <button class="btn" onclick="showUploadMethod('url')" id="btn-url">Upload from URL</button>
+        <button class="btn btn-secondary" onclick="showUploadMethod('direct')" id="btn-direct">Upload File</button>
+    </div>
+    
+    <!-- URL Upload Form -->
+    <div id="upload-url" class="upload-method">
+        <form id="url-upload-form">
+            <div class="form-group">
+                <label for="file-url">File URL:</label>
+                <input type="url" id="file-url" name="url" placeholder="https://example.com/file.pdf" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="url-privacy">Privacy:</label>
+                <select id="url-privacy" name="privacy">
+                    <option value="private">Private</option>
+                    <option value="public">Public</option>
+                </select>
+            </div>
+            
+            <button type="submit" class="btn">Upload from URL</button>
+        </form>
+    </div>
+    
+    <!-- Direct Upload Form -->
+    <div id="upload-direct" class="upload-method hidden">
+        <form id="direct-upload-form">
+            <div class="form-group">
+                <label for="file-input">Select File:</label>
+                <input type="file" id="file-input" name="file" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="direct-privacy">Privacy:</label>
+                <select id="direct-privacy" name="privacy">
+                    <option value="private">Private</option>
+                    <option value="public">Public</option>
+                </select>
+            </div>
+            
+            <button type="submit" class="btn">Upload File</button>
+        </form>
+    </div>
+    
+    <div id="upload-progress" class="hidden">
+        <div style="background-color: #e5e7eb; border-radius: 4px; height: 8px; overflow: hidden;">
+            <div id="progress-bar" style="background-color: #2563eb; height: 100%; width: 0%; transition: width 0.3s;"></div>
+        </div>
+        <p id="progress-text" style="text-align: center; margin-top: 0.5rem;">Uploading...</p>
+    </div>
+</div>
+
+<div class="card">
+    <h3>Manage Files</h3>
+    
+    <div style="margin-bottom: 1rem;">
+        <button class="btn btn-secondary" onclick="loadFiles()">Refresh Files</button>
+    </div>
+    
+    <div>
+        <h4>Private Files</h4>
+        <div id="private-files-admin" class="loading">Loading private files...</div>
+    </div>
+    
+    <div style="margin-top: 2rem;">
+        <h4>Public Files</h4>
+        <div id="public-files-admin" class="loading">Loading public files...</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Require authentication for this page
+    if (!requireAuth()) {
+        // requireAuth will redirect if not authenticated
+    }
+    
+    function showUploadMethod(method) {
+        const urlForm = document.getElementById('upload-url');
+        const directForm = document.getElementById('upload-direct');
+        const btnUrl = document.getElementById('btn-url');
+        const btnDirect = document.getElementById('btn-direct');
+        
+        if (method === 'url') {
+            urlForm.classList.remove('hidden');
+            directForm.classList.add('hidden');
+            btnUrl.classList.remove('btn-secondary');
+            btnUrl.classList.add('btn');
+            btnDirect.classList.remove('btn');
+            btnDirect.classList.add('btn-secondary');
+        } else {
+            urlForm.classList.add('hidden');
+            directForm.classList.remove('hidden');
+            btnUrl.classList.remove('btn');
+            btnUrl.classList.add('btn-secondary');
+            btnDirect.classList.remove('btn-secondary');
+            btnDirect.classList.add('btn');
+        }
+    }
+    
+    function showProgress() {
+        document.getElementById('upload-progress').classList.remove('hidden');
+    }
+    
+    function hideProgress() {
+        document.getElementById('upload-progress').classList.add('hidden');
+        document.getElementById('progress-bar').style.width = '0%';
+    }
+    
+    function updateProgress(percent) {
+        document.getElementById('progress-bar').style.width = percent + '%';
+        document.getElementById('progress-text').textContent = `Uploading... ${percent}%`;
+    }
+    
+    // URL Upload Form
+    document.getElementById('url-upload-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const url = document.getElementById('file-url').value;
+        const privacy = document.getElementById('url-privacy').value;
+        
+        showProgress();
+        
+        try {
+            const response = await apiCall('/api/upload/url', {
+                method: 'POST',
+                body: JSON.stringify({
+                    url: url,
+                    privacy: privacy
+                })
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                showAlert(`File uploaded successfully: ${result.filename}`, 'success');
+                document.getElementById('url-upload-form').reset();
+                loadFiles();
+            } else {
+                const error = await response.json();
+                showAlert(error.detail || 'Upload failed');
+            }
+        } catch (error) {
+            showAlert('Upload failed. Please try again.');
+        } finally {
+            hideProgress();
+        }
+    });
+    
+    // Direct Upload Form
+    document.getElementById('direct-upload-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const fileInput = document.getElementById('file-input');
+        const privacy = document.getElementById('direct-privacy').value;
+        const file = fileInput.files[0];
+        
+        if (!file) {
+            showAlert('Please select a file');
+            return;
+        }
+        
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('privacy', privacy);
+        
+        showProgress();
+        
+        try {
+            const response = await fetch('/api/upload/direct', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('jwt_token')}`
+                },
+                body: formData
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                showAlert(`File uploaded successfully: ${result.filename}`, 'success');
+                document.getElementById('direct-upload-form').reset();
+                loadFiles();
+            } else {
+                const error = await response.json();
+                showAlert(error.detail || 'Upload failed');
+            }
+        } catch (error) {
+            showAlert('Upload failed. Please try again.');
+        } finally {
+            hideProgress();
+        }
+    });
+    
+    async function loadFiles() {
+        try {
+            const response = await apiCall('/api/files');
+            
+            if (response.ok) {
+                const files = await response.json();
+                
+                // Separate files by privacy status
+                const privateFiles = files.filter(file => !file.is_public);
+                const publicFiles = files.filter(file => file.is_public);
+                
+                displayAdminFiles(privateFiles, 'private-files-admin', 'private');
+                displayAdminFiles(publicFiles, 'public-files-admin', 'public');
+            } else {
+                document.getElementById('private-files-admin').innerHTML = '<p>Error loading private files</p>';
+                document.getElementById('public-files-admin').innerHTML = '<p>Error loading public files</p>';
+            }
+        } catch (error) {
+            document.getElementById('private-files-admin').innerHTML = '<p>Error loading private files</p>';
+            document.getElementById('public-files-admin').innerHTML = '<p>Error loading public files</p>';
+        }
+    }
+    
+    function displayAdminFiles(files, containerId, type) {
+        const container = document.getElementById(containerId);
+        
+        if (files.length === 0) {
+            container.innerHTML = '<p>No files found</p>';
+            return;
+        }
+        
+        const filesHtml = files.map(file => `
+            <div class="file-item">
+                <div class="file-info">
+                    <div class="file-name">${escapeHtml(file.file_id)}</div>
+                    <div class="file-size">${formatFileSize(file.size)}</div>
+                </div>
+                <div class="file-actions">
+                    <button class="btn btn-secondary" onclick="renameFile('${type}', '${escapeHtml(file.file_id)}')">Rename</button>
+                    <button class="btn btn-secondary" onclick="toggleFilePrivacy('${type}', '${escapeHtml(file.file_id)}')">${type === 'private' ? 'Make Public' : 'Make Private'}</button>
+                    <button class="btn btn-danger" onclick="deleteFile('${type}', '${escapeHtml(file.file_id)}')">Delete</button>
+                </div>
+            </div>
+        `).join('');
+        
+        container.innerHTML = filesHtml;
+    }
+    
+    async function renameFile(type, oldName) {
+        const newName = prompt('Enter new filename:', oldName);
+        if (!newName || newName === oldName) return;
+        
+        try {
+            const response = await apiCall(`/api/rename/${encodeURIComponent(oldName)}`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    new_name: newName,
+                    privacy: type
+                })
+            });
+            
+            if (response.ok) {
+                showAlert('File renamed successfully', 'success');
+                loadFiles();
+            } else {
+                const error = await response.json();
+                showAlert(error.detail || 'Rename failed');
+            }
+        } catch (error) {
+            showAlert('Rename failed. Please try again.');
+        }
+    }
+    
+    async function toggleFilePrivacy(currentType, fileName) {
+        const newType = currentType === 'private' ? 'public' : 'private';
+        
+        try {
+            const response = await apiCall(`/api/share/${encodeURIComponent(fileName)}`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    privacy: newType,
+                    current_privacy: currentType
+                })
+            });
+            
+            if (response.ok) {
+                showAlert(`File moved to ${newType}`, 'success');
+                loadFiles();
+            } else {
+                const error = await response.json();
+                showAlert(error.detail || 'Privacy toggle failed');
+            }
+        } catch (error) {
+            showAlert('Privacy toggle failed. Please try again.');
+        }
+    }
+    
+    async function deleteFile(type, fileName) {
+        if (!confirm(`Are you sure you want to delete "${fileName}"?`)) return;
+        
+        try {
+            const response = await apiCall(`/api/files/${encodeURIComponent(fileName)}`, {
+                method: 'DELETE',
+                body: JSON.stringify({
+                    privacy: type
+                })
+            });
+            
+            if (response.ok) {
+                showAlert('File deleted successfully', 'success');
+                loadFiles();
+            } else {
+                const error = await response.json();
+                showAlert(error.detail || 'Delete failed');
+            }
+        } catch (error) {
+            showAlert('Delete failed. Please try again.');
+        }
+    }
+    
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    // Load files when page loads
+    document.addEventListener('DOMContentLoaded', loadFiles);
+</script>
+{% endblock %}

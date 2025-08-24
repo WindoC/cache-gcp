@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends, Request
+from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel, HttpUrl
 from typing import Optional, List
 import uuid
@@ -88,8 +88,67 @@ async def list_files(is_public: Optional[bool] = None, current_user: dict = Depe
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list files: {str(e)}")
 
-@router.get("/download/{file_id}")
-async def download_file(file_id: str, is_public: bool = False, current_user: Optional[dict] = Depends(get_optional_current_user)):
+@router.api_route("/download/private/{file_id}", methods=["GET", "HEAD"])
+async def download_private_file(file_id: str, request: Request, current_user: dict = Depends(get_current_user)):
+    """Download private file - requires authentication"""
+    try:
+        # For HEAD requests, only get file info without downloading
+        if request.method == "HEAD":
+            file_info = gcs_client.get_file_info(file_id, is_public=False)
+            return Response(
+                headers={
+                    "Content-Length": str(file_info['size']),
+                    "Content-Type": file_info.get('content_type', 'application/octet-stream'),
+                    "Content-Disposition": f"attachment; filename={file_id}"
+                }
+            )
+        
+        # For GET requests, download and stream the file
+        file_data = gcs_client.download_file(file_id, is_public=False)
+        
+        return StreamingResponse(
+            io.BytesIO(file_data), 
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f"attachment; filename={file_id}"}
+        )
+    
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="File not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")
+
+@router.api_route("/download/public/{file_id}", methods=["GET", "HEAD"])
+async def download_public_file(file_id: str, request: Request):
+    """Download public file - no authentication required"""
+    try:
+        # For HEAD requests, only get file info without downloading
+        if request.method == "HEAD":
+            file_info = gcs_client.get_file_info(file_id, is_public=True)
+            return Response(
+                headers={
+                    "Content-Length": str(file_info['size']),
+                    "Content-Type": file_info.get('content_type', 'application/octet-stream'),
+                    "Content-Disposition": f"attachment; filename={file_id}"
+                }
+            )
+        
+        # For GET requests, download and stream the file
+        file_data = gcs_client.download_file(file_id, is_public=True)
+        
+        return StreamingResponse(
+            io.BytesIO(file_data), 
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f"attachment; filename={file_id}"}
+        )
+    
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="File not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")
+
+# Keep the old endpoint for backward compatibility (deprecated)
+@router.api_route("/download/{file_id}", methods=["GET", "HEAD"])
+async def download_file(file_id: str, request: Request, is_public: bool = False, current_user: Optional[dict] = Depends(get_optional_current_user)):
     # For private files, require authentication
     if not is_public and not current_user:
         raise HTTPException(
@@ -98,10 +157,19 @@ async def download_file(file_id: str, is_public: bool = False, current_user: Opt
         )
     
     try:
-        file_data = gcs_client.download_file(file_id, is_public)
+        # For HEAD requests, only get file info without downloading
+        if request.method == "HEAD":
+            file_info = gcs_client.get_file_info(file_id, is_public)
+            return Response(
+                headers={
+                    "Content-Length": str(file_info['size']),
+                    "Content-Type": file_info.get('content_type', 'application/octet-stream'),
+                    "Content-Disposition": f"attachment; filename={file_id}"
+                }
+            )
         
-        def iterfile():
-            yield file_data
+        # For GET requests, download and stream the file
+        file_data = gcs_client.download_file(file_id, is_public)
         
         return StreamingResponse(
             io.BytesIO(file_data), 

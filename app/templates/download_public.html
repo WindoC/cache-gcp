@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block title %}Download Public File - File Storage{% endblock %}
+
+{% block content %}
+<div class="card" style="text-align: center;">
+    <h2>Download Public File</h2>
+    <div id="download-content">
+        <div class="loading">
+            <p>Preparing download...</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    async function initializeDownload() {
+        const pathParts = window.location.pathname.split('/');
+        const fileName = decodeURIComponent(pathParts[pathParts.length - 1]);
+        
+        const contentDiv = document.getElementById('download-content');
+        
+        try {
+            // Check if file exists and get info (no auth required for public files)
+            const response = await fetch(`/api/download/public/${encodeURIComponent(fileName)}`, {
+                method: 'HEAD'
+            });
+            
+            if (response.ok) {
+                const fileSize = response.headers.get('Content-Length');
+                const contentType = response.headers.get('Content-Type');
+                
+                contentDiv.innerHTML = `
+                    <div class="file-info" style="margin-bottom: 2rem;">
+                        <div class="file-name" style="font-size: 1.25rem; font-weight: 500; margin-bottom: 0.5rem;">${escapeHtml(fileName)}</div>
+                        ${fileSize ? `<div class="file-size">Size: ${formatFileSize(parseInt(fileSize))}</div>` : ''}
+                        ${contentType ? `<div class="file-type">Type: ${contentType}</div>` : ''}
+                    </div>
+                    <div style="display: flex; gap: 1rem; justify-content: center; align-items: center; flex-wrap: wrap;">
+                        <button class="btn" onclick="downloadFile('${escapeHtml(fileName)}')">
+                            Download File
+                        </button>
+                        <button class="btn btn-secondary" onclick="copyDownloadLink()">Copy Link</button>
+                        <a href="/files" class="btn btn-secondary" style="text-decoration: none;">Browse Files</a>
+                    </div>
+                    <div style="margin-top: 1rem;">
+                        <p style="color: #6b7280; font-size: 0.875rem;">
+                            This is a public file - no authentication required
+                        </p>
+                    </div>
+                `;
+            } else if (response.status === 404) {
+                contentDiv.innerHTML = `
+                    <div class="alert alert-error">
+                        <strong>File not found</strong><br>
+                        The public file "${escapeHtml(fileName)}" does not exist.
+                    </div>
+                    <a href="/files" class="btn">Browse Files</a>
+                `;
+            } else {
+                throw new Error('Failed to access file');
+            }
+        } catch (error) {
+            contentDiv.innerHTML = `
+                <div class="alert alert-error">
+                    <strong>Error accessing file</strong><br>
+                    Please check your connection and try again.
+                </div>
+                <a href="/files" class="btn">Browse Files</a>
+            `;
+        }
+    }
+    
+    async function downloadFile(fileName) {
+        try {
+            const response = await fetch(`/api/download/public/${encodeURIComponent(fileName)}`);
+            
+            if (response.ok) {
+                // Create blob and download
+                const blob = await response.blob();
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(downloadUrl);
+            } else {
+                showAlert('Download failed. Please try again.');
+            }
+        } catch (error) {
+            showAlert('Download failed. Please check your connection and try again.');
+        }
+    }
+    
+    function copyDownloadLink() {
+        const pathParts = window.location.pathname.split('/');
+        const fileName = decodeURIComponent(pathParts[pathParts.length - 1]);
+        const downloadUrl = `${window.location.origin}/download/public/${encodeURIComponent(fileName)}`;
+        copyToClipboard(downloadUrl);
+    }
+    
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    // Initialize download when page loads
+    document.addEventListener('DOMContentLoaded', initializeDownload);
+</script>
+{% endblock %}

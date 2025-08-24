@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block title %}Files - File Storage{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Your Files</h2>
+    <p>Browse and download your uploaded files</p>
+</div>
+
+<div class="card">
+    <h3>Private Files</h3>
+    <div id="private-files" class="loading">Loading private files...</div>
+</div>
+
+<div class="card">
+    <h3>Public Files</h3>
+    <div id="public-files" class="loading">Loading public files...</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Require authentication for this page
+    if (!requireAuth()) {
+        // requireAuth will redirect if not authenticated
+    }
+    
+    async function loadFiles() {
+        try {
+            const response = await apiCall('/api/files');
+            
+            if (response.ok) {
+                const files = await response.json();
+                
+                // Separate files by privacy status
+                const privateFiles = files.filter(file => !file.is_public);
+                const publicFiles = files.filter(file => file.is_public);
+                
+                displayFiles(privateFiles, 'private-files', 'private');
+                displayFiles(publicFiles, 'public-files', 'public');
+            } else {
+                document.getElementById('private-files').innerHTML = '<p>Error loading private files</p>';
+                document.getElementById('public-files').innerHTML = '<p>Error loading public files</p>';
+            }
+        } catch (error) {
+            document.getElementById('private-files').innerHTML = '<p>Error loading private files</p>';
+            document.getElementById('public-files').innerHTML = '<p>Error loading public files</p>';
+        }
+    }
+    
+    function displayFiles(files, containerId, type) {
+        const container = document.getElementById(containerId);
+        
+        if (files.length === 0) {
+            container.innerHTML = '<p>No files found</p>';
+            return;
+        }
+        
+        const filesHtml = files.map(file => `
+            <div class="file-item">
+                <div class="file-info">
+                    <div class="file-name">${escapeHtml(file.file_id)}</div>
+                    <div class="file-size">${formatFileSize(file.size)}</div>
+                </div>
+                <div class="file-actions">
+                    <button class="btn" onclick="copyDownloadLink('${type}', '${escapeHtml(file.file_id)}')">Copy Link</button>
+                    <a href="/download/${type}/${encodeURIComponent(file.file_id)}" class="btn btn-secondary" style="text-decoration: none;">Download</a>
+                </div>
+            </div>
+        `).join('');
+        
+        container.innerHTML = filesHtml;
+    }
+    
+    function copyDownloadLink(type, fileName) {
+        const baseUrl = window.location.origin;
+        const downloadUrl = `${baseUrl}/download/${type}/${encodeURIComponent(fileName)}`;
+        copyToClipboard(downloadUrl);
+    }
+    
+    
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    // Load files when page loads
+    document.addEventListener('DOMContentLoaded', loadFiles);
+</script>
+{% endblock %}

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}File Storage{% endblock %}
+
+{% block content %}
+<div class="card" style="text-align: center;">
+    <div class="loading">
+        <h2>File Storage Platform</h2>
+        <p>Redirecting...</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Redirect based on authentication status
+    document.addEventListener('DOMContentLoaded', function() {
+        if (isAuthenticated()) {
+            window.location.href = '/files';
+        } else {
+            window.location.href = '/login';
+        }
+    });
+</script>
+{% endblock %}

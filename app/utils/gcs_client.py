@@ -139,5 +139,25 @@ class GCSClient:
         object_path = self._get_object_path(file_id, is_public)
         blob = self.bucket.blob(object_path)
         return blob.exists()
+    
+    def get_file_info(self, file_id: str, is_public: bool = False) -> dict:
+        """Get file information without downloading the file content"""
+        if not self.bucket:
+            raise Exception("GCS not configured")
+        
+        object_path = self._get_object_path(file_id, is_public)
+        blob = self.bucket.blob(object_path)
+        
+        try:
+            # Reload blob to get fresh metadata
+            blob.reload()
+            return {
+                "size": blob.size,
+                "content_type": blob.content_type,
+                "created": blob.time_created,
+                "updated": blob.updated
+            }
+        except NotFound:
+            raise FileNotFoundError(f"File not found: {file_id}")
 
 gcs_client = GCSClient()

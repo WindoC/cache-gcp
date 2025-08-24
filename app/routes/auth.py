@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Form
 from pydantic import BaseModel
 from app.utils.auth import verify_password_hash, create_access_token, get_current_user, USERNAME
 
@@ -17,18 +17,21 @@ class LogoutResponse(BaseModel):
     message: str
 
 @router.post("/login", response_model=LoginResponse)
-async def login(request: LoginRequest):
+async def login(
+    username: str = Form(...),
+    password: str = Form(...)
+):
     """Authenticate user and return JWT token"""
     
     # Verify username
-    if request.username != USERNAME:
+    if username != USERNAME:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password",
         )
     
     # Verify password
-    if not verify_password_hash(request.password):
+    if not verify_password_hash(password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password",
@@ -36,7 +39,7 @@ async def login(request: LoginRequest):
     
     # Create access token
     access_token = create_access_token(
-        data={"sub": request.username}
+        data={"sub": username}
     )
     
     return LoginResponse(
