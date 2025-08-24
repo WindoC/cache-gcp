@@ -159,15 +159,19 @@ The system evolves through phases:
 
 #### 5.2.8 API Endpoints
 
-* `POST /login` — Authenticate, return JWT.
-* `POST /logout` — Invalidate JWT (optional).
-* `POST /upload/url` — Upload from external URL.
-* `POST /upload/direct` — Upload file directly from browser (multipart/form-data).
-* `GET /files` — List files.
-* `GET /download/{file_id}` — Download file.
-* `POST /rename/{file_id}` — Rename file.
-* `POST /share/{file_id}` — Toggle private/public.
-* `DELETE /files/{file_id}` — Delete file.
+**Authentication:**
+* `POST /auth/login` — Authenticate, return JWT.
+* `POST /auth/logout` — Invalidate JWT (optional).
+* `GET /auth/me` — Get current user information.
+
+**File Operations:**
+* `POST /api/upload/url` — Upload from external URL.
+* `POST /api/upload/direct` — Upload file directly from browser (multipart/form-data).
+* `GET /api/files` — List files.
+* `GET /api/download/{file_id}` — Download file.
+* `POST /api/rename/{file_id}` — Rename file.
+* `POST /api/share/{file_id}` — Toggle private/public.
+* `DELETE /api/files/{file_id}` — Delete file.
 
 ---
 
