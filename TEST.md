@@ -100,7 +100,28 @@ The API will be available at:
 - **Documentation**: http://localhost:8000/docs
 - **Alternative docs**: http://localhost:8000/redoc
 
-## Testing the API
+## Testing the Application
+
+### Web Interface Testing
+
+**Phase 2 includes a complete web interface for easier testing and usage!**
+
+#### Step 1: Access the Web Interface
+1. Navigate to http://localhost:8000 in your browser
+2. You should see the home page with file upload options
+
+#### Step 2: Login via Web Interface  
+1. Click "Login" or navigate to http://localhost:8000/login
+2. Enter username: `admin` and password: `password` (default dev credentials)
+3. You'll be redirected to the file management page
+
+#### Step 3: Test File Operations via Web Interface
+1. **Upload Files**: Use the upload form on the home page
+2. **File Management**: Visit http://localhost:8000/files to see all uploaded files
+3. **Admin Controls**: Visit http://localhost:8000/admin for administrative functions
+4. **Download Pages**: Access files via http://localhost:8000/download/private/{file_id} or http://localhost:8000/download/public/{file_id}
+
+### API Testing via curl
 
 ### Authentication Flow
 
@@ -109,8 +130,8 @@ The API will be available at:
 #### Step 1: Login and Get JWT Token
 ```bash
 curl -X POST "http://localhost:8000/auth/login" \
-     -H "Content-Type: application/json" \
-     -d '{"username": "admin", "password": "password"}'
+     -H "Content-Type: application/x-www-form-urlencoded" \
+     -d "username=admin&password=password"
 ```
 
 Expected response:
@@ -149,8 +170,8 @@ $TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 ```bash
 # Login
 curl -X POST "http://localhost:8000/auth/login" \
-     -H "Content-Type: application/json" \
-     -d '{"username": "admin", "password": "password"}'
+     -H "Content-Type: application/x-www-form-urlencoded" \
+     -d "username=admin&password=password"
 
 # Get current user info (requires token)
 curl -X GET "http://localhost:8000/auth/me" \
@@ -201,16 +222,25 @@ curl "http://localhost:8000/api/files?is_public=false" \
      -H "Authorization: Bearer $TOKEN"
 ```
 
-#### 5. Download File (Conditional Authentication)
+#### 5. Download File (Dedicated Endpoints)
 ```bash
-# Private file download (requires authentication)
-curl "http://localhost:8000/api/download/test-file-1?is_public=false" \
+# Private file download (requires authentication) - NEW dedicated endpoint
+curl "http://localhost:8000/api/download/private/test-file-1" \
      -H "Authorization: Bearer $TOKEN" \
      --output downloaded-file.json
 
-# Public file download (no authentication required)
-curl "http://localhost:8000/api/download/public-file?is_public=true" \
+# Public file download (no authentication required) - NEW dedicated endpoint
+curl "http://localhost:8000/api/download/public/public-file" \
      --output downloaded-public-file.json
+
+# Legacy endpoint still works (requires is_public query parameter)
+curl "http://localhost:8000/api/download/test-file-1?is_public=false" \
+     -H "Authorization: Bearer $TOKEN" \
+     --output downloaded-legacy.json
+
+# HEAD request to get file info without downloading
+curl -I "http://localhost:8000/api/download/private/test-file-1" \
+     -H "Authorization: Bearer $TOKEN"
 ```
 
 #### 6. Rename File (Requires Authentication)
@@ -238,11 +268,15 @@ curl -X DELETE "http://localhost:8000/api/files/renamed-test-file?is_public=true
 # This should fail with 401 Unauthorized
 curl "http://localhost:8000/api/files"
 
-# This should fail with 401 Unauthorized
-curl "http://localhost:8000/api/download/private-file?is_public=false"
+# This should fail with 401 Unauthorized (private endpoint)
+curl "http://localhost:8000/api/download/private/private-file"
 
-# This should work (public file, no auth required)
-curl "http://localhost:8000/api/download/public-file?is_public=true"
+# This should work (public endpoint, no auth required)
+curl "http://localhost:8000/api/download/public/public-file"
+
+# Legacy endpoint tests
+curl "http://localhost:8000/api/download/private-file?is_public=false"  # Should fail
+curl "http://localhost:8000/api/download/public-file?is_public=true"   # Should work
 ```
 
 ### Using Python Requests
@@ -266,7 +300,7 @@ class FileStorageAPITester:
     
     def login(self):
         """Login and get JWT token"""
-        response = requests.post(f"{AUTH_URL}/login", json={
+        response = requests.post(f"{AUTH_URL}/login", data={
             "username": self.username,
             "password": self.password
         })
@@ -321,18 +355,19 @@ class FileStorageAPITester:
         return response.json() if response.status_code == 200 else []
     
     def test_download_file(self, file_id, is_public=False):
-        """Test file download"""
-        # Test with auth for private files
+        """Test file download using new dedicated endpoints"""
         if not is_public:
-            response = requests.get(f"{API_URL}/download/{file_id}", 
-                                  headers=self.headers,
-                                  params={"is_public": is_public})
+            # Use dedicated private endpoint
+            response = requests.get(f"{API_URL}/download/private/{file_id}", 
+                                  headers=self.headers)
         else:
-            # Test without auth for public files
-            response = requests.get(f"{API_URL}/download/{file_id}", 
-                                  params={"is_public": is_public})
+            # Use dedicated public endpoint (no auth needed)
+            response = requests.get(f"{API_URL}/download/public/{file_id}")
         
         print(f"Download {file_id} (public={is_public}): {response.status_code}")
+        if response.status_code == 200:
+            print(f"  Content-Length: {response.headers.get('Content-Length', 'N/A')}")
+            print(f"  Content-Type: {response.headers.get('Content-Type', 'N/A')}")
         return response.content if response.status_code == 200 else None
     
     def test_rename_file(self, file_id, new_name, is_public=False):
@@ -367,16 +402,23 @@ class FileStorageAPITester:
         # Test without auth token - should fail
         response = requests.get(f"{API_URL}/files")
         if response.status_code == 401:
-            print("✅ Unauthorized access blocked correctly")
+            print("✅ Unauthorized file listing blocked correctly")
         else:
-            print(f"❌ Unauthorized access not blocked: {response.status_code}")
+            print(f"❌ Unauthorized file listing not blocked: {response.status_code}")
         
-        # Test private file download without auth - should fail
-        response = requests.get(f"{API_URL}/download/test-file?is_public=false")
+        # Test private file download without auth - should fail (new endpoint)
+        response = requests.get(f"{API_URL}/download/private/test-file")
         if response.status_code == 401:
-            print("✅ Private file access blocked correctly")
+            print("✅ Private file access blocked correctly (dedicated endpoint)")
         else:
             print(f"❌ Private file access not blocked: {response.status_code}")
+        
+        # Test legacy endpoint without auth - should fail  
+        response = requests.get(f"{API_URL}/download/test-file?is_public=false")
+        if response.status_code == 401:
+            print("✅ Private file access blocked correctly (legacy endpoint)")
+        else:
+            print(f"❌ Private file access not blocked (legacy): {response.status_code}")
     
     def run_full_test_suite(self):
         """Run complete test suite"""
@@ -510,24 +552,35 @@ For basic API structure testing without GCS setup, the endpoints will return err
 
 When properly configured, you should see:
 
-### Authentication
-- ✅ Successful login with valid credentials  
+### Web Interface
+- ✅ Home page loads with upload interface at http://localhost:8000
+- ✅ Login page works with default credentials (admin/password)
+- ✅ JWT token stored in browser localStorage after login
+- ✅ File management interface shows uploaded files
+- ✅ Admin controls accessible after authentication
+- ✅ Download pages work for both private and public files
+
+### Authentication API
+- ✅ Successful login with valid credentials (form-based authentication)
 - ✅ 401 errors for requests without valid JWT tokens
 - ✅ Proper JWT token format in login response
 - ✅ User info accessible via /auth/me endpoint
 
-### File Operations  
+### File Operations API
 - ✅ Successful file uploads (both URL and direct) with authentication
 - ✅ Files appearing in your GCS bucket under `private/` or `public/` folders
 - ✅ Correct file listing with size information (authenticated)
+- ✅ Dedicated download endpoints: `/api/download/private/` and `/api/download/public/`
+- ✅ HEAD requests return file metadata without downloading content
 - ✅ Private file downloads require authentication
-- ✅ Public file downloads work without authentication
+- ✅ Public file downloads work without authentication  
 - ✅ Successful renames, share toggles, and deletions (all authenticated)
 
 ### Access Control
 - ✅ 401 errors for all file operations without authentication
-- ✅ Private files properly protected
-- ✅ Public files accessible without authentication
+- ✅ Private files properly protected via dedicated `/api/download/private/` endpoint
+- ✅ Public files accessible without authentication via `/api/download/public/` endpoint
+- ✅ Legacy `/api/download/{file_id}` endpoint with conditional authentication
 - ✅ Appropriate error responses for invalid operations
 
 ## Phase Status

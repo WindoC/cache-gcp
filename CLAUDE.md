@@ -4,57 +4,88 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a single-user file storage web platform that allows uploading files via external URLs or direct browser upload and stores them in Google Cloud Storage (GCS). The project uses FastAPI backend with optional end-to-end AES encryption and is designed for deployment on Google App Engine (GAE) Standard Environment.
+This is a single-user file storage web platform with both interactive web interface and REST API support. It allows uploading files via external URLs or direct browser upload and stores them in Google Cloud Storage (GCS). The project uses FastAPI backend with Jinja2 templates for the web interface, JWT authentication, and is designed for deployment on Google App Engine (GAE) Standard Environment.
 
 ## Development Phases
 
 The project follows a phased approach:
-- **Phase 1**: Core Logic (URL upload, direct browser upload, list, download, rename, delete, private/public folders)
-- **Phase 2**: Authentication & Access Control (JWT-based auth)
-- **Phase 3**: End-to-End AES Encryption (optional user-supplied key encryption)
-- **Cloud Phase**: Deploy to GAE Standard
+- **Phase 1**: Core Logic (URL upload, direct browser upload, list, download, rename, delete, private/public folders) ✅
+- **Phase 2**: Authentication & Access Control (JWT-based auth) ✅
+- **Phase 3**: End-to-End AES Encryption (optional user-supplied key encryption) - *Planned*
+- **Cloud Phase**: Deploy to GAE Standard - *Ready for deployment*
 
 ## Technology Stack
 
 - **Backend**: FastAPI (Python 3.13)
+- **Frontend**: Jinja2 templates with HTML/JavaScript (Bootstrap styling)
 - **Deployment**: Google App Engine (GAE) Standard
-- **Storage**: Google Cloud Storage (GCS)
-- **Authentication**: JWT (stored client-side in localStorage)
-- **Encryption**: AES-GCM (Web Crypto API + Python `cryptography`)
+- **Storage**: Google Cloud Storage (GCS) 
+- **Authentication**: JWT with PyJWT, SHA256 password hashing (passlib with bcrypt)
+- **HTTP Client**: Requests library for URL downloads
+- **Server**: Uvicorn for development, Gunicorn for production
+- **Encryption**: AES-GCM (Web Crypto API + Python `cryptography`) - *Phase 3 planned*
 
 ## Project Structure
 
-The application structure should follow this layout per PRD requirements:
+The application follows this structure (current implementation):
 ```
 project-root/
 ├── app/
-│   ├── main.py        # FastAPI entrypoint
-│   ├── routes/        # API routes
-│   ├── services/      # business logic
-│   ├── utils/         # helpers (crypto, GCS client, etc.)
+│   ├── main.py              # FastAPI entrypoint with web routes
+│   ├── routes/              # API route modules
+│   │   ├── __init__.py
+│   │   ├── auth.py          # Authentication endpoints (/auth/*)
+│   │   └── files.py         # File management endpoints (/api/*)
+│   ├── templates/           # Jinja2 HTML templates
+│   │   ├── base.html        # Base template with navigation
+│   │   ├── index.html       # Home/upload page
+│   │   ├── login.html       # Authentication page
+│   │   ├── files.html       # File management interface
+│   │   ├── admin.html       # Administrative controls
+│   │   ├── download_private.html  # Private download page
+│   │   └── download_public.html   # Public download page
+│   ├── services/            # Business logic (empty, reserved for future)
+│   ├── utils/               # Helper modules
+│   │   ├── __init__.py
+│   │   ├── auth.py          # JWT and authentication utilities
+│   │   └── gcs_client.py    # Google Cloud Storage client
 │   └── __init__.py
-├── app.yaml           # GAE config
-├── requirements.txt
-└── README.md
+├── app.yaml                 # GAE configuration
+├── requirements.txt         # Python dependencies
+├── README.md               # Project documentation
+├── TEST.md                 # Testing instructions
+└── CLAUDE.md              # This file - Claude Code guidance
 ```
 
-**Note**: Core app logic resides in `app/` folder, while project root contains only entry point, config, and dependencies.
+**Note**: Core app logic resides in `app/` folder, while project root contains only configuration, dependencies, and documentation.
 
-## Key API Endpoints
+## Key Endpoints
 
-### Authentication
-- `POST /auth/login` — Authenticate, return JWT
-- `POST /auth/logout` — Invalidate JWT
+### Web Interface (HTML Pages)
+- `GET /` — Home page with file upload interface
+- `GET /login` — Authentication page
+- `GET /files` — File management interface
+- `GET /admin` — Administrative controls
+- `GET /download/private/{file_id}` — Private file download page
+- `GET /download/public/{file_id}` — Public file download page
+
+### Authentication API
+- `POST /auth/login` — Authenticate, return JWT (Form data: username, password)
+- `POST /auth/logout` — Invalidate JWT (client-side)
 - `GET /auth/me` — Get current user information
 
-### File Operations
-- `POST /api/upload/url` — Upload from external URL
-- `POST /api/upload/direct` — Upload file directly from browser (multipart/form-data)
-- `GET /api/files` — List files
-- `GET /api/download/{file_id}` — Download file
-- `POST /api/rename/{file_id}` — Rename file
-- `POST /api/share/{file_id}` — Toggle private/public
-- `DELETE /api/files/{file_id}` — Delete file
+### File Operations API (Require Authentication)
+- `POST /api/upload/url` — Upload from external URL (JSON: url, file_id?, is_public?)
+- `POST /api/upload/direct` — Upload file directly (multipart: file, file_id?, is_public?)
+- `GET /api/files` — List files (Query: is_public filter)
+- `POST /api/rename/{file_id}` — Rename file (JSON: new_file_id; Query: is_public)
+- `POST /api/share/{file_id}` — Toggle private/public (Query: current_is_public)
+- `DELETE /api/files/{file_id}` — Delete file (Query: is_public)
+
+### File Download API
+- `GET|HEAD /api/download/private/{file_id}` — Download private file (requires auth)
+- `GET|HEAD /api/download/public/{file_id}` — Download public file (no auth)
+- `GET|HEAD /api/download/{file_id}` — Legacy endpoint (Query: is_public; conditional auth)
 
 ## GCS Structure
 
@@ -72,25 +103,32 @@ Single-user system with:
 ## Environment Variables
 
 For GAE deployment, configure these in app.yaml:
-- `USERNAME` — Admin username
-- `PASSWORD_HASH` — SHA256 hash of password
-- `AES_KEY_HASH` — SHA256 hash of AES encryption key (Phase 3)
+- `USERNAME` — Admin username (default: "admin")
+- `PASSWORD_HASH` — SHA256 hash of password (default dev: SHA256 of "password")
+- `JWT_SECRET_KEY` — Secret key for JWT token signing
 - `GCP_PROJECT` — GCP project ID
 - `GCS_BUCKET` — GCS bucket name
+- `AES_KEY_HASH` — SHA256 hash of AES encryption key (*Phase 3 - not yet implemented*)
 
 ## Security Considerations
 
 - HTTPS enforced (GAE provides managed TLS)
-- File size limit: 200MB (configurable)
-- Optional end-to-end encryption with user-supplied AES key
+- JWT-based authentication with 1-hour token expiration
+- File size limit: 200MB (configurable in `app/utils/gcs_client.py`)
+- Private/public file access control via GCS folder structure
+- SHA256 password hashing with environment variable storage
+- CORS middleware configured for web interface integration
+- Optional end-to-end encryption with user-supplied AES key (*Phase 3 - planned*)
 - GCS IAM with least privilege principles
 
 ## Development Commands
 
-Since this is a new project, typical development commands would be:
+Current development workflow:
 - `pip install -r requirements.txt` — Install dependencies
-- `uvicorn app.main:app --reload` — Run development server
-- `pytest` — Run tests (when implemented)
+- `uvicorn app.main:app --reload` — Run development server with auto-reload
+- Access web interface at `http://localhost:8000`
+- Access API docs at `http://localhost:8000/docs`
+- `pytest` — Run tests (*when implemented*)
 
 ## Deployment
 

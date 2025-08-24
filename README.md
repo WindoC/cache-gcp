@@ -1,6 +1,6 @@
-# File Storage API
+# File Storage Web Platform
 
-A single-user file storage web platform that allows uploading files via external URLs or direct browser upload, storing them in Google Cloud Storage (GCS) with JWT-based authentication.
+A single-user file storage web platform with both web interface and REST API support. Allows uploading files via external URLs or direct browser upload, storing them in Google Cloud Storage (GCS) with JWT-based authentication and private/public access control.
 
 ## Features
 
@@ -15,18 +15,35 @@ A single-user file storage web platform that allows uploading files via external
 
 - **Upload Methods**:
   - External URL upload: Fetch and store files from web URLs
-  - Direct browser upload: Upload files directly from user's device
+  - Direct browser upload: Upload files directly from user's device (multipart/form-data)
 - **File Management**: List, download, rename, delete, and toggle privacy
 - **Storage Organization**:
   - `private/` folder: Authentication required for access
   - `public/` folder: Anonymous access allowed
+- **Download Features**:
+  - Dedicated `/api/download/private/{file_id}` and `/api/download/public/{file_id}` endpoints
+  - HEAD request support for file metadata without download
+  - Proper Content-Disposition headers for file downloads
 - **Size Limits**: Configurable max file size (default: 200MB)
+
+### Web Interface
+
+- **Interactive Frontend**: HTML templates with Bootstrap styling
+- **Pages Available**:
+  - `/` - Home page with file operations
+  - `/login` - Authentication page  
+  - `/files` - File management interface
+  - `/admin` - Administrative controls
+  - `/download/private/{file_id}` - Private file download page
+  - `/download/public/{file_id}` - Public file download page
 
 ## Technology Stack
 
 - **Backend**: FastAPI (Python 3.13)
-- **Authentication**: JWT with PyJWT, SHA256 password hashing
+- **Frontend**: Jinja2 templates with HTML/JavaScript
+- **Authentication**: JWT with PyJWT, SHA256 password hashing (passlib with bcrypt support)
 - **Storage**: Google Cloud Storage (GCS)
+- **HTTP Client**: Requests library for URL downloads
 - **Deployment**: Google App Engine (GAE) Standard Environment
 
 ## Project Structure
@@ -34,21 +51,30 @@ A single-user file storage web platform that allows uploading files via external
 ```
 project-root/
 ├── app/
-│   ├── main.py              # FastAPI application entry point
+│   ├── main.py              # FastAPI application entry point with web routes
 │   ├── routes/
 │   │   ├── __init__.py
-│   │   ├── auth.py          # Authentication endpoints
-│   │   └── files.py         # File management endpoints
-│   ├── services/            # Business logic (future phases)
+│   │   ├── auth.py          # Authentication endpoints (/auth/*)
+│   │   └── files.py         # File management endpoints (/api/*)
+│   ├── templates/           # Jinja2 HTML templates for web interface
+│   │   ├── base.html        # Base template with navigation
+│   │   ├── index.html       # Home page
+│   │   ├── login.html       # Authentication page
+│   │   ├── files.html       # File management interface
+│   │   ├── admin.html       # Administrative controls
+│   │   ├── download_private.html  # Private file download page
+│   │   └── download_public.html   # Public file download page
+│   ├── services/            # Business logic (empty, for future phases)
 │   ├── utils/
 │   │   ├── __init__.py
 │   │   ├── auth.py          # JWT and authentication utilities
 │   │   └── gcs_client.py    # Google Cloud Storage client
 │   └── __init__.py
 ├── app.yaml                 # GAE configuration
-├── requirements.txt         # Python dependencies
+├── requirements.txt         # Python dependencies  
 ├── README.md
-└── TEST.md                  # Testing setup guide
+├── TEST.md                  # Testing setup guide
+└── CLAUDE.md               # Project instructions for Claude Code
 ```
 
 ## Environment Variables
@@ -67,23 +93,31 @@ Configure these environment variables for authentication and GCS:
 
 ## API Endpoints
 
-### Authentication
-- `POST /auth/login` - Authenticate and receive JWT token
+### Web Interface Routes (HTML Pages)
+- `GET /` - Home page with file upload interface
+- `GET /login` - Authentication page
+- `GET /files` - File management interface  
+- `GET /admin` - Administrative controls
+- `GET /download/private/{file_id}` - Private file download page
+- `GET /download/public/{file_id}` - Public file download page
+
+### Authentication API
+- `POST /auth/login` - Authenticate and receive JWT token (Form: username, password)
 - `POST /auth/logout` - Logout (client-side token removal)
 - `GET /auth/me` - Get current user information
 
-### File Operations (Authentication Required)
-- `POST /api/upload/url` - Upload file from external URL
-- `POST /api/upload/direct` - Upload file directly from browser
+### File Operations API (Authentication Required)
+- `POST /api/upload/url` - Upload file from external URL (JSON: url, file_id?, is_public?)
+- `POST /api/upload/direct` - Upload file directly (multipart: file, file_id?, is_public?)
 - `GET /api/files` - List all files (with optional `is_public` filter)
-- `POST /api/rename/{file_id}` - Rename file (specify `is_public` query param)
-- `POST /api/share/{file_id}` - Toggle between private/public (specify `current_is_public` query param)  
-- `DELETE /api/files/{file_id}` - Delete file (specify `is_public` query param)
+- `POST /api/rename/{file_id}` - Rename file (JSON: new_file_id; Query: is_public)
+- `POST /api/share/{file_id}` - Toggle between private/public (Query: current_is_public)  
+- `DELETE /api/files/{file_id}` - Delete file (Query: is_public)
 
-### File Download (Conditional Authentication)
-- `GET /api/download/{file_id}` - Download file
-  - Public files: No authentication required
-  - Private files: Requires valid JWT token
+### File Download API
+- `GET|HEAD /api/download/private/{file_id}` - Download private file (requires authentication)
+- `GET|HEAD /api/download/public/{file_id}` - Download public file (no authentication)
+- `GET|HEAD /api/download/{file_id}` - Legacy endpoint (Query: is_public; conditional auth)
 
 ## Development Setup
 
@@ -107,19 +141,27 @@ Configure these environment variables for authentication and GCS:
    uvicorn app.main:app --reload
    ```
 
-4. **Access the API**:
-   - API: http://localhost:8000
-   - Documentation: http://localhost:8000/docs
-   - Alternative docs: http://localhost:8000/redoc
+4. **Access the application**:
+   - **Web Interface**: http://localhost:8000 (Interactive file management)
+   - **API Documentation**: http://localhost:8000/docs (Interactive API docs)
+   - **Alternative API docs**: http://localhost:8000/redoc
 
 ## Authentication Flow
 
 ### Login Process
+
+#### Via Web Interface
+1. Navigate to http://localhost:8000/login
+2. Enter username: `admin` and password: `password` (default dev credentials)
+3. JWT token is automatically stored in browser localStorage
+4. Access file management at http://localhost:8000/files
+
+#### Via API (curl)
 1. **Authenticate**:
    ```bash
    curl -X POST "http://localhost:8000/auth/login" \
-        -H "Content-Type: application/json" \
-        -d '{"username": "admin", "password": "password"}'
+        -H "Content-Type: application/x-www-form-urlencoded" \
+        -d "username=admin&password=password"
    ```
    
    Response:
