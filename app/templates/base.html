@@ -507,11 +507,12 @@
             
             if (isGetRequest) {
                 // For GET requests, add encrypted parameter
-                const separator = url.includes('?') ? '&' : '?';
-                const encryptedUrl = `${url}${separator}encrypted=true`;
+                // const separator = url.includes('?') ? '&' : '?';
+                // const encryptedUrl = `${url}${separator}encrypted=true`;
                 
-                const response = await apiCall(encryptedUrl, options);
-                
+                // const response = await apiCall(encryptedUrl, options);
+                const response = await apiCall(url, options);
+
                 if (response.ok) {
                     const data = await response.json();
                     if (data.encrypted_payload) {

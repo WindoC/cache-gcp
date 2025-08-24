@@ -31,18 +31,17 @@ class FileResponse(BaseModel):
     is_public: bool
 
 @router.post("/upload/url", response_model=dict)
-async def upload_from_url(request: Union[UploadURLRequest, EncryptedRequest], current_user: dict = Depends(get_current_user)):
+async def upload_from_url(request: EncryptedRequest, current_user: dict = Depends(get_current_user)):
     try:
-        # Handle encrypted request
-        if isinstance(request, EncryptedRequest):
-            decrypted_data = handle_encrypted_request(request.dict())
-            url = decrypted_data.get('url')
-            file_id = decrypted_data.get('file_id')
-            is_public = decrypted_data.get('is_public', False)
-        else:
-            url = str(request.url)
-            file_id = request.file_id
-            is_public = request.is_public
+        # This endpoint ONLY accepts encrypted requests - no fallback allowed
+        if not requires_encryption():
+            raise HTTPException(status_code=501, detail="This endpoint requires encryption to be configured")
+        
+        # Handle encrypted request only
+        decrypted_data = handle_encrypted_request(request.dict())
+        url = decrypted_data.get('url')
+        file_id = decrypted_data.get('file_id')
+        is_public = decrypted_data.get('is_public', False)
         
         if not url:
             raise HTTPException(status_code=400, detail="URL is required")
@@ -74,9 +73,8 @@ async def upload_from_url(request: Union[UploadURLRequest, EncryptedRequest], cu
             "is_public": is_public
         }
         
-        # Return encrypted response if request was encrypted and encryption is available
-        should_encrypt = isinstance(request, EncryptedRequest) and requires_encryption()
-        return create_encrypted_response(response_data, should_encrypt)
+        # Always return encrypted response
+        return create_encrypted_response(response_data, True)
     
     except ValueError as e:
         raise HTTPException(status_code=413, detail=str(e))
@@ -104,26 +102,25 @@ async def upload_direct(
         if encrypted_payload:
             print(f"DEBUG: encrypted_payload length: {len(encrypted_payload)}")
             
-        # Handle encrypted request
-        if encrypted_payload:
-            decrypted_data = handle_encrypted_request({"encrypted_payload": encrypted_payload})
-            # For encrypted uploads, file data is base64 encoded in the payload
-            file_data_b64 = decrypted_data.get('file_data')
-            if not file_data_b64:
-                raise HTTPException(status_code=400, detail="Missing file_data in encrypted payload")
+        # This endpoint ONLY accepts encrypted requests - no fallback allowed
+        if not requires_encryption():
+            raise HTTPException(status_code=501, detail="This endpoint requires encryption to be configured")
+        
+        if not encrypted_payload:
+            raise HTTPException(status_code=400, detail="This endpoint only accepts encrypted uploads")
             
-            import base64
-            file_data = base64.b64decode(file_data_b64)
-            final_file_id = decrypted_data.get('file_id')
-            is_public_final = decrypted_data.get('is_public', False)
-            original_filename = decrypted_data.get('filename')
-        else:
-            if not file:
-                raise HTTPException(status_code=400, detail="File is required")
-            file_data = await file.read()
-            final_file_id = file_id
-            is_public_final = is_public if is_public is not None else False
-            original_filename = file.filename if hasattr(file, 'filename') else None
+        # Handle encrypted request only
+        decrypted_data = handle_encrypted_request({"encrypted_payload": encrypted_payload})
+        # For encrypted uploads, file data is base64 encoded in the payload
+        file_data_b64 = decrypted_data.get('file_data')
+        if not file_data_b64:
+            raise HTTPException(status_code=400, detail="Missing file_data in encrypted payload")
+        
+        import base64
+        file_data = base64.b64decode(file_data_b64)
+        final_file_id = decrypted_data.get('file_id')
+        is_public_final = decrypted_data.get('is_public', False)
+        original_filename = decrypted_data.get('filename')
         
         # Priority: API input -> original filename -> UUID
         if not final_file_id:
@@ -143,9 +140,8 @@ async def upload_direct(
             "original_filename": original_filename
         }
         
-        # Return encrypted response if request was encrypted and encryption is available
-        should_encrypt = encrypted_payload is not None and requires_encryption()
-        return create_encrypted_response(response_data, should_encrypt)
+        # Always return encrypted response
+        return create_encrypted_response(response_data, True)
     
     except ValueError as e:
         raise HTTPException(status_code=413, detail=str(e))
@@ -154,32 +150,34 @@ async def upload_direct(
 
 @router.get("/files")
 async def list_files(
-    is_public: Optional[bool] = None, 
-    encrypted: Optional[bool] = None,
+    is_public: Optional[bool] = None,
     current_user: dict = Depends(get_current_user)
 ):
     try:
-        files = gcs_client.list_files(is_public)
-        response_data = files
+        # This endpoint ONLY works with encryption - no fallback allowed
+        if not requires_encryption():
+            raise HTTPException(status_code=501, detail="This endpoint requires encryption to be configured")
         
-        # Return encrypted response if requested and encryption is available
-        should_encrypt = encrypted is True and requires_encryption()
-        if should_encrypt:
-            return create_encrypted_response({"files": response_data}, should_encrypt)
-        else:
-            return response_data
+        files = gcs_client.list_files(is_public)
+        response_data = {"files": files}
+        
+        # Always return encrypted response
+        return create_encrypted_response(response_data, True)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list files: {str(e)}")
 
 @router.api_route("/download/private/{file_id}", methods=["GET", "HEAD"])
 async def download_private_file(
     file_id: str, 
-    request: Request, 
-    encrypted: Optional[bool] = None,
+    request: Request,
     current_user: dict = Depends(get_current_user)
 ):
-    """Download private file - requires authentication"""
+    """Download private file - requires authentication and encryption"""
     try:
+        # This endpoint ONLY works with encryption - no fallback allowed
+        if not requires_encryption():
+            raise HTTPException(status_code=501, detail="This endpoint requires encryption to be configured")
+        
         # For HEAD requests, only get file info without downloading
         if request.method == "HEAD":
             file_info = gcs_client.get_file_info(file_id, is_public=False)
@@ -191,28 +189,19 @@ async def download_private_file(
                 }
             )
         
-        # For GET requests, download and stream the file
+        # For GET requests, download and return encrypted response
         file_data = gcs_client.download_file(file_id, is_public=False)
         
-        # If encryption is requested and available, return encrypted response
-        should_encrypt = encrypted is True and requires_encryption()
-        if should_encrypt:
-            import base64
-            file_data_b64 = base64.b64encode(file_data).decode()
-            response_data = {
-                "file_id": file_id,
-                "file_data": file_data_b64,
-                "size": len(file_data)
-            }
-            encrypted_response = create_encrypted_response(response_data, should_encrypt)
-            return JSONResponse(content=encrypted_response)
-        else:
-            # Return normal file stream
-            return StreamingResponse(
-                io.BytesIO(file_data), 
-                media_type="application/octet-stream",
-                headers={"Content-Disposition": f"attachment; filename={file_id}"}
-            )
+        # Always return encrypted response
+        import base64
+        file_data_b64 = base64.b64encode(file_data).decode()
+        response_data = {
+            "file_id": file_id,
+            "file_data": file_data_b64,
+            "size": len(file_data)
+        }
+        encrypted_response = create_encrypted_response(response_data, True)
+        return JSONResponse(content=encrypted_response)
     
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="File not found")

@@ -74,42 +74,42 @@
     
     async function downloadFile(fileName) {
         try {
-            // Always use encrypted download (will prompt for key if needed)
+            // This endpoint ONLY works with encryption - no fallback
             await aesCrypto.getKey();
             
-            const response = await apiCall(`/api/download/private/${encodeURIComponent(fileName)}?encrypted=true`);
+            const response = await apiCall(`/api/download/private/${encodeURIComponent(fileName)}`);
             
             if (response.ok) {
                 const data = await response.json();
-                if (data.encrypted_payload) {
-                    // Decrypt the response
-                    const decrypted = await aesCrypto.decrypt(data.encrypted_payload);
-                    
-                    // Convert base64 file data to blob
-                    const binaryString = atob(decrypted.file_data);
-                    const bytes = new Uint8Array(binaryString.length);
-                    for (let i = 0; i < binaryString.length; i++) {
-                        bytes[i] = binaryString.charCodeAt(i);
-                    }
-                    const blob = new Blob([bytes]);
-                    
-                    // Download the decrypted file
-                    const downloadUrl = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = downloadUrl;
-                    a.download = fileName;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    window.URL.revokeObjectURL(downloadUrl);
-                    return;
-                } else {
-                    showAlert('Server did not return encrypted data');
+                if (!data.encrypted_payload) {
+                    throw new Error('Server did not return encrypted data');
                 }
+                
+                // Decrypt the response
+                const decrypted = await aesCrypto.decrypt(data.encrypted_payload);
+                
+                // Convert base64 file data to blob
+                const binaryString = atob(decrypted.file_data);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                const blob = new Blob([bytes]);
+                
+                // Download the decrypted file
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(downloadUrl);
             } else {
                 showAlert('Download failed. Please try again.');
             }
         } catch (error) {
+            console.error('Download failed:', error);
             showAlert('Download failed. Please check your connection and try again.');
         }
     }
