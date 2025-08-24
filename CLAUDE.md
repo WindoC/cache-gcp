@@ -11,7 +11,7 @@ This is a single-user file storage web platform with both interactive web interf
 The project follows a phased approach:
 - **Phase 1**: Core Logic (URL upload, direct browser upload, list, download, rename, delete, private/public folders) ✅
 - **Phase 2**: Authentication & Access Control (JWT-based auth) ✅
-- **Phase 3**: End-to-End AES Encryption (optional user-supplied key encryption) - *Planned*
+- **Phase 3**: End-to-End AES Encryption (mandatory user-supplied key encryption for specific endpoints) ✅
 - **Cloud Phase**: Deploy to GAE Standard - *Ready for deployment*
 
 ## Technology Stack
@@ -23,7 +23,7 @@ The project follows a phased approach:
 - **Authentication**: JWT with PyJWT, SHA256 password hashing (passlib with bcrypt)
 - **HTTP Client**: Requests library for URL downloads
 - **Server**: Uvicorn for development, Gunicorn for production
-- **Encryption**: AES-GCM (Web Crypto API + Python `cryptography`) - *Phase 3 planned*
+- **Encryption**: AES-GCM (Web Crypto API + Python `cryptography`) ✅
 
 ## Project Structure
 
@@ -48,7 +48,10 @@ project-root/
 │   ├── utils/               # Helper modules
 │   │   ├── __init__.py
 │   │   ├── auth.py          # JWT and authentication utilities
-│   │   └── gcs_client.py    # Google Cloud Storage client
+│   │   ├── gcs_client.py    # Google Cloud Storage client
+│   │   ├── crypto.py        # AES encryption/decryption utilities
+│   │   ├── encryption_middleware.py  # Encryption request/response handlers
+│   │   └── form_parser.py   # Large form data parser for encrypted uploads
 │   └── __init__.py
 ├── app.yaml                 # GAE configuration
 ├── requirements.txt         # Python dependencies
@@ -75,17 +78,21 @@ project-root/
 - `GET /auth/me` — Get current user information
 
 ### File Operations API (Require Authentication)
-- `POST /api/upload/url` — Upload from external URL (JSON: url, file_id?, is_public?)
-- `POST /api/upload/direct` — Upload file directly (multipart: file, file_id?, is_public?)
-- `GET /api/files` — List files (Query: is_public filter)
+
+#### Encryption-Required Endpoints 🔒
+These endpoints **ONLY** work with end-to-end encryption:
+- `POST /api/upload/url` — Upload from external URL (encrypted_payload only)
+- `POST /api/upload/direct` — Upload file directly (encrypted_payload only)
+- `GET /api/files` — List files (always returns encrypted response)
+- `GET|HEAD /api/download/private/{file_id}` — Download private file (always returns encrypted response)
+
+#### Standard Endpoints  
 - `POST /api/rename/{file_id}` — Rename file (JSON: new_file_id; Query: is_public)
 - `POST /api/share/{file_id}` — Toggle private/public (Query: current_is_public)
 - `DELETE /api/files/{file_id}` — Delete file (Query: is_public)
 
 ### File Download API
-- `GET|HEAD /api/download/private/{file_id}` — Download private file (requires auth)
 - `GET|HEAD /api/download/public/{file_id}` — Download public file (no auth)
-- `GET|HEAD /api/download/{file_id}` — Legacy endpoint (Query: is_public; conditional auth)
 
 ## GCS Structure
 
@@ -108,17 +115,20 @@ For GAE deployment, configure these in app.yaml:
 - `JWT_SECRET_KEY` — Secret key for JWT token signing
 - `GCP_PROJECT` — GCP project ID
 - `GCS_BUCKET` — GCS bucket name
-- `AES_KEY_HASH` — SHA256 hash of AES encryption key (*Phase 3 - not yet implemented*)
+- `AES_KEY_HASH` — SHA256 hash of AES encryption key (Phase 3)
 
 ## Security Considerations
 
 - HTTPS enforced (GAE provides managed TLS)
 - JWT-based authentication with 1-hour token expiration
 - File size limit: 200MB (configurable in `app/utils/gcs_client.py`)
+- Encrypted uploads support up to 250MB payload size
 - Private/public file access control via GCS folder structure
 - SHA256 password hashing with environment variable storage
 - CORS middleware configured for web interface integration
-- Optional end-to-end encryption with user-supplied AES key (*Phase 3 - planned*)
+- **End-to-end AES-GCM encryption** with user-supplied keys for specific endpoints
+- **Encryption-only endpoints** with no fallback to unencrypted mode
+- **Mandatory encryption** for sensitive file operations
 - GCS IAM with least privilege principles
 
 ## Development Commands

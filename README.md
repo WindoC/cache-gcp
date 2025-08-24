@@ -4,6 +4,18 @@ A single-user file storage web platform with both web interface and REST API sup
 
 ## Features
 
+### Phase 3 - End-to-End AES Encryption ✅
+
+- **Mandatory Encryption**: Specific endpoints require AES-GCM encryption with no fallback
+- **User-Supplied Keys**: Users prompted to enter AES encryption key on first use
+- **Key Management**: SHA256 hash stored in localStorage, automatic re-prompting on failures
+- **Encrypted Operations**: 
+  - File listing: GET `/api/files`
+  - URL uploads: POST `/api/upload/url`
+  - Direct uploads: POST `/api/upload/direct`  
+  - Private downloads: GET `/api/download/private/{file_id}`
+- **Large File Support**: Handles encrypted payloads up to 250MB
+
 ### Phase 2 - Authentication & Access Control ✅
 
 - **JWT-based Authentication**: Secure login with Bearer token authorization
@@ -42,6 +54,7 @@ A single-user file storage web platform with both web interface and REST API sup
 - **Backend**: FastAPI (Python 3.13)
 - **Frontend**: Jinja2 templates with HTML/JavaScript
 - **Authentication**: JWT with PyJWT, SHA256 password hashing (passlib with bcrypt support)
+- **Encryption**: AES-GCM with Web Crypto API (frontend) and Python cryptography library (backend)
 - **Storage**: Google Cloud Storage (GCS)
 - **HTTP Client**: Requests library for URL downloads
 - **Deployment**: Google App Engine (GAE) Standard Environment
@@ -68,7 +81,10 @@ project-root/
 │   ├── utils/
 │   │   ├── __init__.py
 │   │   ├── auth.py          # JWT and authentication utilities
-│   │   └── gcs_client.py    # Google Cloud Storage client
+│   │   ├── gcs_client.py    # Google Cloud Storage client
+│   │   ├── crypto.py        # AES encryption/decryption utilities
+│   │   ├── encryption_middleware.py  # Encryption request/response handlers
+│   │   └── form_parser.py   # Large form data parser for encrypted uploads
 │   └── __init__.py
 ├── app.yaml                 # GAE configuration
 ├── requirements.txt         # Python dependencies  
@@ -85,6 +101,7 @@ Configure these environment variables for authentication and GCS:
 - `USERNAME`: Admin username (default: "admin")
 - `PASSWORD_HASH`: SHA256 hash of password
 - `JWT_SECRET_KEY`: Secret key for JWT token signing
+- `AES_KEY_HASH`: SHA256 hash of AES encryption key (Phase 3)
 - `GCP_PROJECT`: Google Cloud Project ID
 - `GCS_BUCKET`: Google Cloud Storage bucket name
 
@@ -107,17 +124,21 @@ Configure these environment variables for authentication and GCS:
 - `GET /auth/me` - Get current user information
 
 ### File Operations API (Authentication Required)
-- `POST /api/upload/url` - Upload file from external URL (JSON: url, file_id?, is_public?)
-- `POST /api/upload/direct` - Upload file directly (multipart: file, file_id?, is_public?)
-- `GET /api/files` - List all files (with optional `is_public` filter)
+
+#### Encryption-Required Endpoints 🔒
+These endpoints **ONLY** work with end-to-end encryption:
+- `POST /api/upload/url` - Upload file from external URL (encrypted_payload only)
+- `POST /api/upload/direct` - Upload file directly (encrypted_payload only)  
+- `GET /api/files` - List all files (always returns encrypted response)
+- `GET|HEAD /api/download/private/{file_id}` - Download private file (always returns encrypted response)
+
+#### Standard Endpoints
 - `POST /api/rename/{file_id}` - Rename file (JSON: new_file_id; Query: is_public)
 - `POST /api/share/{file_id}` - Toggle between private/public (Query: current_is_public)  
 - `DELETE /api/files/{file_id}` - Delete file (Query: is_public)
 
 ### File Download API
-- `GET|HEAD /api/download/private/{file_id}` - Download private file (requires authentication)
 - `GET|HEAD /api/download/public/{file_id}` - Download public file (no authentication)
-- `GET|HEAD /api/download/{file_id}` - Legacy endpoint (Query: is_public; conditional auth)
 
 ## Development Setup
 
@@ -131,6 +152,7 @@ Configure these environment variables for authentication and GCS:
    export USERNAME="admin"
    export PASSWORD_HASH="5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"  # SHA256 of "password"
    export JWT_SECRET_KEY="your-secret-key-change-this-in-production"
+   export AES_KEY_HASH="6ca13d52ca70c883e0f0bb101e425a89e8624de51db2d2392593af6a84118090"  # SHA256 of "abc123"
    export GCP_PROJECT="your-project-id"
    export GCS_BUCKET="your-bucket-name"
    export GOOGLE_APPLICATION_CREDENTIALS="path/to/service-account.json"
@@ -219,6 +241,7 @@ Ensure your service account has the following permissions:
      USERNAME: "admin"
      PASSWORD_HASH: "your-sha256-hash"
      JWT_SECRET_KEY: "your-secret-key"
+     AES_KEY_HASH: "your-aes-key-sha256-hash"
      GCP_PROJECT: "your-project-id"
      GCS_BUCKET: "your-bucket-name"
    ```
@@ -231,6 +254,7 @@ Ensure your service account has the following permissions:
 ## File Size Limits
 
 - Default maximum file size: 200MB
+- Encrypted uploads support up to 250MB payload size (includes base64 encoding overhead)
 - Configurable in the GCS client utility functions
 - GAE request timeout applies to upload operations
 
@@ -238,27 +262,32 @@ Ensure your service account has the following permissions:
 
 The API returns appropriate HTTP status codes:
 - `200` - Success
+- `400` - Bad request (missing encrypted payload for encryption-required endpoints)
 - `401` - Authentication required/invalid
 - `404` - File not found
 - `409` - File already exists (for uploads and renames)
 - `413` - File too large
 - `500` - Server error (GCS issues, etc.)
+- `501` - Encryption not configured (for encryption-required endpoints)
 
 ## Security Features
 
 - **HTTPS**: Enforced by GAE managed TLS certificates
 - **JWT Authentication**: Secure token-based authentication
+- **End-to-End Encryption**: AES-GCM encryption for sensitive operations
 - **Password Security**: SHA256 hashed passwords stored in environment variables
+- **Encryption Key Management**: User-supplied AES keys with SHA256 hash validation
 - **Access Control**: Granular private/public file access control
 - **Token Expiration**: 1-hour JWT token expiration for security
 - **CORS**: Configured for secure web application integration
+- **No Encryption Fallback**: Critical endpoints enforce encryption-only access
 
 ## Development Phases
 
 - ✅ **Phase 1**: Core Logic (file operations, GCS integration)
-- ✅ **Phase 2**: Authentication & Access Control (current implementation)
-- 🔄 **Phase 3**: End-to-End AES Encryption (planned)
-- 🔄 **Cloud Phase**: Production deployment optimizations (planned)
+- ✅ **Phase 2**: Authentication & Access Control
+- ✅ **Phase 3**: End-to-End AES Encryption (current implementation)
+- 🔄 **Cloud Phase**: Production deployment optimizations (ready for deployment)
 
 ## Notes
 
