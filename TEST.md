@@ -62,28 +62,28 @@ Set the following environment variables for local development:
 ```bash
 # On Windows (Command Prompt):
 set USERNAME=admin
-set PASSWORD_HASH=240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9
+set PASSWORD_HASH=5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8
 set JWT_SECRET_KEY=your-secret-key-change-this-in-production
 set GCP_PROJECT=your-project-id
 set GCS_BUCKET=your-unique-bucket-name
 
 # On Windows (PowerShell):
 $env:USERNAME="admin"
-$env:PASSWORD_HASH="240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9"
+$env:PASSWORD_HASH="5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"
 $env:JWT_SECRET_KEY="your-secret-key-change-this-in-production"
 $env:GCP_PROJECT="your-project-id"
 $env:GCS_BUCKET="your-unique-bucket-name"
 
 # On macOS/Linux:
 export USERNAME="admin"
-export PASSWORD_HASH="240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9"  # SHA256 of "admin"
+export PASSWORD_HASH="5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"  # SHA256 of "password"
 export JWT_SECRET_KEY="your-secret-key-change-this-in-production"
 export GCP_PROJECT="your-project-id"
 export GCS_BUCKET="your-unique-bucket-name"
 ```
 
 **Authentication Notes**:
-- `PASSWORD_HASH` above is SHA256 hash of "admin" for development
+- `PASSWORD_HASH` above is SHA256 hash of "password" for development
 - For production, generate your own hash: `echo -n "your-password" | sha256sum`
 - `JWT_SECRET_KEY` should be a secure random string in production
 - **Note**: No `GOOGLE_APPLICATION_CREDENTIALS` needed if you used `gcloud auth application-default login` for local development. For GAE deployment, authentication is automatic.
@@ -110,7 +110,7 @@ The API will be available at:
 ```bash
 curl -X POST "http://localhost:8000/auth/login" \
      -H "Content-Type: application/json" \
-     -d '{"username": "admin", "password": "admin"}'
+     -d '{"username": "admin", "password": "password"}'
 ```
 
 Expected response:
@@ -150,7 +150,7 @@ $TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 # Login
 curl -X POST "http://localhost:8000/auth/login" \
      -H "Content-Type: application/json" \
-     -d '{"username": "admin", "password": "admin"}'
+     -d '{"username": "admin", "password": "password"}'
 
 # Get current user info (requires token)
 curl -X GET "http://localhost:8000/auth/me" \
@@ -258,7 +258,7 @@ API_URL = f"{BASE_URL}/api"
 AUTH_URL = f"{BASE_URL}/auth"
 
 class FileStorageAPITester:
-    def __init__(self, username="admin", password="admin"):
+    def __init__(self, username="admin", password="password"):
         self.username = username
         self.password = password
         self.token = None

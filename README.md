@@ -57,7 +57,7 @@ Configure these environment variables for authentication and GCS:
 
 ### Required for Production
 - `USERNAME`: Admin username (default: "admin")
-- `PASSWORD_HASH`: SHA256 hash of admin password
+- `PASSWORD_HASH`: SHA256 hash of password
 - `JWT_SECRET_KEY`: Secret key for JWT token signing
 - `GCP_PROJECT`: Google Cloud Project ID
 - `GCS_BUCKET`: Google Cloud Storage bucket name
@@ -95,7 +95,7 @@ Configure these environment variables for authentication and GCS:
 2. **Set environment variables** (optional for development):
    ```bash
    export USERNAME="admin"
-   export PASSWORD_HASH="240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9"  # SHA256 of "admin"
+   export PASSWORD_HASH="5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"  # SHA256 of "password"
    export JWT_SECRET_KEY="your-secret-key-change-this-in-production"
    export GCP_PROJECT="your-project-id"
    export GCS_BUCKET="your-bucket-name"
@@ -119,7 +119,7 @@ Configure these environment variables for authentication and GCS:
    ```bash
    curl -X POST "http://localhost:8000/auth/login" \
         -H "Content-Type: application/json" \
-        -d '{"username": "admin", "password": "admin"}'
+        -d '{"username": "admin", "password": "password"}'
    ```
    
    Response:
@@ -223,5 +223,5 @@ The API returns appropriate HTTP status codes:
 - Single-user system designed for personal file storage
 - JWT tokens are stateless - logout is handled client-side
 - File IDs are used as object names in GCS (with folder prefixes)
-- Default development credentials: username "admin", password "admin"
+- Default development credentials: username "admin", password "password"
 - For production, always use strong passwords and proper environment variable configuration

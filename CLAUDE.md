@@ -69,7 +69,7 @@ Single-user system with:
 
 For GAE deployment, configure these in app.yaml:
 - `USERNAME` — Admin username
-- `PASSWORD_HASH` — SHA256 hash of admin password
+- `PASSWORD_HASH` — SHA256 hash of password
 - `AES_KEY_HASH` — SHA256 hash of AES encryption key (Phase 3)
 - `GCP_PROJECT` — GCP project ID
 - `GCS_BUCKET` — GCS bucket name

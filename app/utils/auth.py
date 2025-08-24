@@ -24,7 +24,7 @@ def verify_password_hash(password: str) -> bool:
     """Verify password against SHA256 hash from environment variables"""
     if not PASSWORD_HASH:
         # For development/testing without environment variables
-        return password == "admin"
+        return password == "password"
     
     # Create SHA256 hash of the provided password
     password_sha256 = hashlib.sha256(password.encode()).hexdigest()
