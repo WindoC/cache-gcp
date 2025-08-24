@@ -10,6 +10,9 @@ app = FastAPI(title="File Storage API", version="2.0.0")
 # Initialize templates
 templates = Jinja2Templates(directory="app/templates")
 
+# Mount static files
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
